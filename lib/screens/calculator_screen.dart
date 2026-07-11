@@ -764,7 +764,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       _buildCard(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         _buildHeading("🔩 কাটিং ইঞ্চি (ওভাররাইড করা যাবে)"),
-        Text("ফর্মুলা থেকে অটো ভরা হয়েছে। প্রয়োজন অনুযায়ী এডিট করুন।",
+        Text("প্রয়োজন অনুযায়ী এডিট করুন।",
             style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11, fontStyle: FontStyle.italic)),
         const SizedBox(height: 12),
         Row(children: [
