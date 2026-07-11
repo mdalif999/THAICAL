@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/database_service.dart';
+import 'invoice_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -294,8 +295,16 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildInvoiceCard(Map<String, dynamic> inv) {
     double due = (inv['due'] as num).toDouble();
     bool isPaid = due <= 0;
-    return Container(
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => InvoiceDetailScreen(invoice: inv)),
+        );
+      },
+      child: Container(
       margin: const EdgeInsets.only(bottom: 10),
+
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: cCard,
@@ -342,6 +351,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
         ],
+      ),
       ),
     );
   }

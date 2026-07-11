@@ -368,15 +368,29 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         'name': name,
         'phone': _customerPhoneController.text.trim(),
         'brand': _selectedThaiColorSet?.brand ?? 'Thai',
+        'color': _selectedThaiColorSet?.color ?? '',
+        'thickness': _selectedThaiColorSet?.thick ?? 0,
+        'glassBrand': _selectedGlassBrand?.brandName ?? '',
         'total': calc.calcGrandTotal(),
         'due': calc.calcDue(),
         'date': DateTime.now().toIso8601String(),
+        'windows': _windowsList,
+        'totalSft': calc.calcTotalSft(),
+        'aluTotal': calc.calcAluTotal(),
+        'glassTotal': calc.calcGlassTotal(),
+        'hwTotal': calc.calcHwTotal(),
+        'labor': calc.labor,
+        'advance': calc.advance,
+        'dlCount': _dlCount,
+        'swCount': _swCount,
+        'scCount': _scCount,
+        'snCount': _snCount,
       };
       
       await DatabaseService.instance.saveInvoice(invoice);
       _showSnackBar("হিসাব সেভ হয়েছে! ✓", cGreen);
     } catch (e) {
-      _showSnackBar("সেভ করার সময় ত্রুটি ঘটেছে: $e", cRed);
+      _showSnackBar("সেভ করার সময় ত্রুটি ঘটেছে: $e", cRed);
     } finally {
       if (mounted) {
         setState(() => _isSaving = false);
@@ -944,16 +958,34 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       _buildCard(
         borderColor: cAccent2.withOpacity(0.4),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            _buildHeading("🧾 ফাইনাল ইনভয়েস"),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(color: cAccent2, borderRadius: BorderRadius.circular(6)),
-              child: Text(
-                "${_selectedBrandName ?? 'Thai'} (${_selectedColorName ?? ''})",
-                style: GoogleFonts.hindSiliguri(color: cBg, fontSize: 10, fontWeight: FontWeight.bold),
-              ),
-            ),
+          _buildHeading("🧾 ফাইনাল ইনভয়েস"),
+          const SizedBox(height: 10),
+          Row(children: [
+            Expanded(child: _buildCompactDropdown(
+              label: "ব্র্যান্ড",
+              value: _selectedBrandName,
+              items: _thaiColorSets.map((e) => e.brand).toSet().toList(),
+              onChanged: (v) => setState(() {
+                _selectedBrandName = v;
+                _updateColorsForBrand();
+              }),
+            )),
+            const SizedBox(width: 6),
+            Expanded(child: _buildCompactDropdown(
+              label: "কালার",
+              value: _selectedColorName,
+              items: _thaiColorSets
+                  .where((e) => e.brand == _selectedBrandName)
+                  .map((e) => e.color)
+                  .toSet()
+                  .toList(),
+              onChanged: (v) => setState(() {
+                _selectedColorName = v;
+                _updateThicknessesForColor();
+              }),
+            )),
+            const SizedBox(width: 6),
+            Expanded(child: _buildCompactThicknessDropdown()),
           ]),
           const SizedBox(height: 14),
           _buildInvoiceRow("🔩 অ্যালুমিনিয়াম বার", aluTotal.toDouble()),
@@ -984,7 +1016,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
         icon: const Icon(Icons.send_rounded, size: 18),
-        label: Text("📲  WhatsApp-এ বিল পাঠান",
+        label: Text("WhatsApp-এ বিল পাঠান",
             style: GoogleFonts.hindSiliguri(fontSize: 15, fontWeight: FontWeight.bold)),
       ),
       const SizedBox(height: 10),
@@ -1001,10 +1033,71 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
             ? const SizedBox(width: 18, height: 18,
                 child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
             : const Icon(Icons.save_rounded, size: 18),
-        label: Text(_isSaving ? "সেভ হচ্ছে..." : "💾  হিসাব সেভ করুন",
+        label: Text(_isSaving ? "সেভ হচ্ছে..." : "হিসাব সেভ করুন",
             style: GoogleFonts.hindSiliguri(fontSize: 15, fontWeight: FontWeight.bold)),
       ),
     ]);
+  }
+
+  Widget _buildCompactDropdown({
+    required String label,
+    required String? value,
+    required List<String> items,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return DropdownButtonFormField<String>(
+      value: value,
+      isExpanded: true,
+      dropdownColor: cCard,
+      style: GoogleFonts.hindSiliguri(color: cText, fontSize: 11),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 9),
+        filled: true, fillColor: const Color(0xFF12151F),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(6),
+            borderSide: const BorderSide(color: cBorder)),
+        focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(6),
+            borderSide: const BorderSide(color: cAccent2)),
+      ),
+      items: items.map((v) =>
+          DropdownMenuItem(value: v, child: Text(v, overflow: TextOverflow.ellipsis))).toList(),
+      onChanged: onChanged,
+    );
+  }
+
+  Widget _buildCompactThicknessDropdown() {
+    final thicknessList = _thaiColorSets
+        .where((e) => e.brand == _selectedBrandName && e.color == _selectedColorName)
+        .map((e) => e.thick)
+        .toSet()
+        .toList();
+    return DropdownButtonFormField<double>(
+      value: _selectedThickness,
+      isExpanded: true,
+      dropdownColor: cCard,
+      style: GoogleFonts.inter(color: cText, fontSize: 11),
+      decoration: InputDecoration(
+        labelText: "পুরুত্ব",
+        labelStyle: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 9),
+        filled: true, fillColor: const Color(0xFF12151F),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(6),
+            borderSide: const BorderSide(color: cBorder)),
+        focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(6),
+            borderSide: const BorderSide(color: cAccent2)),
+      ),
+      items: thicknessList.map((v) =>
+          DropdownMenuItem(value: v, child: Text("${v.toStringAsFixed(1)}mm"))).toList(),
+      onChanged: (v) => setState(() {
+        _selectedThickness = v;
+        _updateSelectedThaiColorSet();
+      }),
+    );
   }
 
   Widget _buildInvoiceRow(String label, double amount,
