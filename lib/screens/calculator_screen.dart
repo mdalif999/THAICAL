@@ -64,6 +64,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   int _swCount = 0;
   int _scCount = 0;
   int _snCount = 0;
+  final _hwRateController = TextEditingController(text: "25");
 
   final _laborController = TextEditingController(text: "0");
   final _advanceController = TextEditingController(text: "0");
@@ -93,6 +94,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     _sbController.dispose();
     _laborController.dispose();
     _advanceController.dispose();
+    _hwRateController.dispose();
     _customerNameController.dispose();
     _customerPhoneController.dispose();
     super.dispose();
@@ -180,6 +182,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       swCount: _swCount,
       scCount: _scCount,
       snCount: _snCount,
+      hwRatePerSft: double.tryParse(_hwRateController.text) ?? 25,
       labor: double.tryParse(_laborController.text) ?? 0,
       advance: double.tryParse(_advanceController.text) ?? 0,
       overrideOs: double.tryParse(_osController.text),
@@ -194,7 +197,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
 
   double _calcTotalSft() => _getCalculation().calcTotalSft();
   int _calcAluTotal() => _getCalculation().calcAluTotal();
-  int _calcHwTotal() => _getCalculation().calcHwTotal();
+  double _calcHwTotal() => _getCalculation().calcHwTotal();
   double _calcSft(double w, double h, int qty) => WindowCalculation.calcSft(w, h, qty);
   double _inchToBars(double inch) => WindowCalculation.inchToBars(inch);
 
@@ -274,8 +277,8 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       _currentStep = 1;
       _dlCount = _swCount = _scCount = _snCount = 0;
       _winNameController.text = "Window 1";
-      _winWidthController.text = "84";
-      _winHeightController.text = "72";
+      _winWidthController.text = "60";
+      _winHeightController.text = "60";
       _winQtyController.text = "1";
       _osController.clear();
       _otController.clear();
@@ -295,7 +298,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     final calc = _getCalculation();
     double totalSft = calc.calcTotalSft();
     int aluTotal = calc.calcAluTotal();
-    int hwTotal = calc.calcHwTotal();
+    double hwTotal = calc.calcHwTotal();
     double glassTotal = calc.calcGlassTotal();
     double labor = calc.labor;
     double advance = calc.advance;
@@ -869,22 +872,25 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
 
   Widget _buildStep3() {
     return _buildCard(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      _buildHeading("🛠️ হার্ডওয়্যার কাউন্টার"),
-      Text("অটো সংখ্যা বসানো হয়েছে — প্রয়োজনে বাড়ান/কমান।",
+      _buildHeading("🛠️ হার্ডওয়্যার"),
+      Text("লক, চাকা, স্ক্রু, রাবার সব মিলিয়ে প্রতি বর্গফুট রেট। প্রয়োজনে বদলান।",
           style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11, fontStyle: FontStyle.italic)),
       const SizedBox(height: 16),
-      _buildCounterRow("🔒 D/L ডোর লক (পিস)", _dlCount, (v) => setState(() => _dlCount = v)),
-      const SizedBox(height: 12),
-      _buildCounterRow("⚙️ S/W চাকা / হুইল (পিস)", _swCount, (v) => setState(() => _swCount = v)),
-      const SizedBox(height: 12),
-      _buildCounterRow("🪛 স্ক্রু প্যাক (Screw Pack)", _scCount, (v) => setState(() => _scCount = v)),
-      const SizedBox(height: 12),
-      _buildCounterRow("🟤 R/P রাবার প্যাড প্যাক", _snCount, (v) => setState(() => _snCount = v)),
+      _buildTextInput(
+        controller: _hwRateController,
+        label: "হার্ডওয়্যার প্রতি বর্গফুট (৳)",
+        isNumber: true,
+        onChanged: (v) => setState(() {}),
+      ),
       const SizedBox(height: 16),
       const Divider(color: cBorder),
       const SizedBox(height: 12),
-      Text("হার্ডওয়্যার সাবটোটাল: ৳ ${_fmtTk(_calcHwTotal().toDouble())}",
-          style: GoogleFonts.hindSiliguri(color: cYellow, fontWeight: FontWeight.bold, fontSize: 15)),
+      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        Text("মোট এলাকা: ${_calcTotalSft().toStringAsFixed(2)} Sft",
+            style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 13)),
+        Text("হার্ডওয়্যার সাবটোটাল: ৳ ${_fmtTk(_calcHwTotal())}",
+            style: GoogleFonts.hindSiliguri(color: cYellow, fontWeight: FontWeight.bold, fontSize: 15)),
+      ]),
     ]));
   }
 
@@ -913,7 +919,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     final calc = _getCalculation();
     double totalSft = calc.calcTotalSft();
     int aluTotal = calc.calcAluTotal();
-    int hwTotal = calc.calcHwTotal();
+    double hwTotal = calc.calcHwTotal();
     double glassTotal = calc.calcGlassTotal();
     double labor = calc.labor;
     double advance = calc.advance;
@@ -990,7 +996,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           const SizedBox(height: 14),
           _buildInvoiceRow("🔩 অ্যালুমিনিয়াম বার", aluTotal.toDouble()),
           _buildInvoiceRow("🪟 গ্লাস (${totalSft.toStringAsFixed(1)} Sft)", glassTotal),
-          _buildInvoiceRow("🔧 হার্ডওয়্যার", hwTotal.toDouble()),
+          _buildInvoiceRow("🔧 হার্ডওয়্যার", hwTotal),
           _buildInvoiceRow("👷 লেবার / ফিটিং", labor),
           const SizedBox(height: 6),
           const Divider(color: cBorder),

@@ -11,6 +11,7 @@ class WindowCalculation {
   final int swCount;
   final int scCount;
   final int snCount;
+  final double hwRatePerSft;
   final double labor;
   final double advance;
 
@@ -32,6 +33,7 @@ class WindowCalculation {
     required this.swCount,
     required this.scCount,
     required this.snCount,
+    required this.hwRatePerSft,
     required this.labor,
     required this.advance,
     this.overrideOs,
@@ -134,16 +136,9 @@ class WindowCalculation {
   }
 
   // Calculate total hardware accessories cost
-  int calcHwTotal() {
-    final lockPrice = _getHwPrice('sliding_lock', 220);
-    final wheelPrice = _getHwPrice('sliding_wheel', 45);
-    final screwPrice = _getHwPrice('screw_pack', 150);
-    final rubberPrice = _getHwPrice('rubber_pad', 10);
-
-    return dlCount * lockPrice +
-        swCount * wheelPrice +
-        scCount * screwPrice +
-        snCount * rubberPrice;
+  // Calculate total hardware cost — sqft ভিত্তিক rate, override করা যায়
+  double calcHwTotal() {
+    return calcTotalSft() * hwRatePerSft;
   }
 
   // Calculate total glass cost based on glass brand Sft rate

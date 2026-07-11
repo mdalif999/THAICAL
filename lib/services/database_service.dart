@@ -568,8 +568,8 @@ Future<String> _getOrCreateDeviceId() async {
 
   final List<HardwarePrice> _mockHardwarePrices = [
     HardwarePrice(id: 1, itemKey: 'sliding_lock', itemName: '🔒 D/L ডোর লক (পিস)', price: 220),
-    HardwarePrice(id: 2, itemKey: 'sliding_wheel', itemName: '⚙️ S/W চাকা / হুইল (পিস)', price: 45),
-    HardwarePrice(id: 3, itemKey: 'screw_pack', itemName: '🪛 স্ক্রু প্যাক (Screw Pack)', price: 150),
+    HardwarePrice(id: 2, itemKey: 'sliding_wheel', itemName: '⚙️ S/W চাকা / হুইল (পিস)', price: 120),
+    HardwarePrice(id: 3, itemKey: 'screw_pack', itemName: '🪛 স্ক্রু প্যাক (Per window)', price: 45),
     HardwarePrice(id: 4, itemKey: 'rubber_pad', itemName: '🟤 R/P রাবার প্যাড প্যাক', price: 10),
   ];
 }
