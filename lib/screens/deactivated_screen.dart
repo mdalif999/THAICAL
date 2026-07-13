@@ -56,7 +56,7 @@ class DeactivatedScreen extends StatelessWidget {
                     break;
                   case 'offline_timeout':
                     title = "ইন্টারনেট সংযোগ প্রয়োজন";
-                    message = "অফলাইনে ব্যবহারের ৩ দিনের সময়সীমা শেষ হয়েছে। অ্যাকাউন্ট স্ট্যাটাস যাচাই করতে দয়া করে মোবাইল ডাটা বা ওয়াই-ফাই চালু করে অ্যাপে প্রবেশ করুন।";
+                    message = "অফলাইনে ব্যবহারের ৫ দিনের সময়সীমা শেষ হয়েছে। অ্যাকাউন্ট স্ট্যাটাস যাচাই করতে দয়া করে মোবাইল ডাটা বা ওয়াই-ফাই চালু করে অ্যাপে প্রবেশ করুন।";
                     icon = Icons.wifi_off_rounded;
                     break;
                   case 'session_kicked':

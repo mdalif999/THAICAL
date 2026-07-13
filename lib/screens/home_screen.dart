@@ -96,7 +96,6 @@ class _HomeScreenState extends State<HomeScreen> {
             final name = user?['name']?.toString() ?? 'ইউজার';
             final phone = user?['phone_email']?.toString() ?? '';
             final isPaid = user?['is_paid'] == true;
-            final expiresAt = user?['subscription_expires_at']?.toString();
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -122,11 +121,23 @@ class _HomeScreenState extends State<HomeScreen> {
                         color: isPaid ? cGreen : cAccent2, fontSize: 11, fontWeight: FontWeight.bold),
                   ),
                 ),
-                if (expiresAt != null) ...[
-                  const SizedBox(height: 6),
-                  Text("মেয়াদ: ${expiresAt.split('T').first}",
-                      style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11)),
-                ],
+                if (user != null)
+                  Builder(builder: (context) {
+                    final days = DatabaseService.instance.daysRemaining(user);
+                    final dateStr = isPaid
+                        ? user['subscription_expires_at']?.toString()
+                        : user['trial_ends_at']?.toString();
+                    if (dateStr == null) return const SizedBox.shrink();
+                    final localDate = DateTime.parse(dateStr).toLocal();
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        "মেয়াদ: ${localDate.day}/${localDate.month}/${localDate.year}"
+                        "${days != null ? " (আর $days দিন)" : ""}",
+                        style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11),
+                      ),
+                    );
+                  }),
               ],
             );
           }),
@@ -170,6 +181,11 @@ class _HomeScreenState extends State<HomeScreen> {
           constraints: const BoxConstraints(maxWidth: 450),
           child: Column(
             children: [
+              // ── Reminder Banner ──
+              _ReminderBanner(
+                cAccent2: cAccent2,
+              ),
+
               // ── Summary Cards ──
               Padding(
                 padding: const EdgeInsets.all(16.0),
@@ -362,4 +378,75 @@ class _HomeScreenState extends State<HomeScreen> {
         RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
         (m) => '${m[1]},',
       );
+}
+
+// Dismissible reminder banner — user (X) চাপলে সেই দিনের জন্য বন্ধ থাকে, পরদিন আবার দেখাবে
+class _ReminderBanner extends StatefulWidget {
+  final Color cAccent2;
+  const _ReminderBanner({required this.cAccent2});
+
+  @override
+  State<_ReminderBanner> createState() => _ReminderBannerState();
+}
+
+class _ReminderBannerState extends State<_ReminderBanner> {
+  bool _dismissedToday = false;
+  bool _checked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkDismissed();
+  }
+
+  Future<void> _checkDismissed() async {
+    final dismissed = await DatabaseService.instance.isReminderDismissedToday();
+    if (mounted) {
+      setState(() {
+        _dismissedToday = dismissed;
+        _checked = true;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = DatabaseService.instance.currentUserProfile;
+    if (!_checked || user == null || _dismissedToday || !DatabaseService.instance.shouldShowReminder(user)) {
+      return const SizedBox.shrink();
+    }
+
+    final timeText = DatabaseService.instance.timeRemainingText(user);
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: widget.cAccent2.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: widget.cAccent2.withOpacity(0.4)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.warning_amber_rounded, color: widget.cAccent2, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              "আপনার মেয়াদ আর $timeText পর শেষ হবে। Renew করতে যোগাযোগ করুন।",
+              style: GoogleFonts.hindSiliguri(
+                  color: widget.cAccent2, fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+          ),
+          GestureDetector(
+            onTap: () async {
+              await DatabaseService.instance.dismissReminderForToday();
+              if (mounted) setState(() => _dismissedToday = true);
+            },
+            child: Icon(Icons.close_rounded, color: widget.cAccent2.withOpacity(0.7), size: 18),
+          ),
+        ],
+      ),
+    );
+  }
 }

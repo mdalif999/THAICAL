@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/database_service.dart';
+import 'update_dialog.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -42,6 +43,13 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   }
 
   Future<void> _checkAutoLoginAndLicensing() async {
+    // সবার আগে update check করা (internet থাকলে)
+    final updateInfo = await DatabaseService.instance.checkForUpdate();
+    if (updateInfo != null && mounted) {
+      await showUpdateDialog(context, updateInfo);
+      if (updateInfo['force_update'] == true) return; // force হলে এখানেই আটকে থাকবে
+    }
+
     final check = await DatabaseService.instance.checkOfflineSubscription();
     if (!check['status']) {
       if (mounted) {
@@ -52,7 +60,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
 
     final profile = DatabaseService.instance.currentUserProfile;
     if (profile != null) {
-      if (profile['is_active'] == false) {
+      if (!DatabaseService.instance.hasAccess(profile)) {
         if (mounted) Navigator.pushReplacementNamed(context, '/deactivated');
       } else {
         if (mounted) Navigator.pushReplacementNamed(context, '/home');
@@ -94,14 +102,14 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       );
       
       if (profile != null) {
-        if (profile['is_active'] == false) {
+        if (!DatabaseService.instance.hasAccess(profile)) {
           if (mounted) Navigator.pushReplacementNamed(context, '/deactivated');
         } else {
           if (mounted) Navigator.pushReplacementNamed(context, '/home');
         }
-      } else {
-        _showError("লগইন ব্যর্থ হয়েছে! অনুগ্রহ করে আবার চেষ্টা করুন।");
-      }
+    } else {
+       _showError("লগইন ব্যর্থ হয়েছে! অনুগ্রহ করে আবার চেষ্টা করুন।");
+    }
     } catch (e) {
       _showError("লগইন ব্যর্থ হয়েছে: ${e.toString()}");
     } finally {
@@ -121,14 +129,14 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       );
       
       if (profile != null) {
-        if (profile['is_active'] == false) {
+        if (!DatabaseService.instance.hasAccess(profile)) {
           if (mounted) Navigator.pushReplacementNamed(context, '/deactivated');
         } else {
           if (mounted) Navigator.pushReplacementNamed(context, '/home');
         }
-      } else {
-        _showError("রেজিস্ট্রেশন ব্যর্থ হয়েছে!");
-      }
+    } else {
+       _showError("রেজিস্ট্রেশন ব্যর্থ হয়েছে!");
+    }
     } catch (e) {
       _showError("রেজিস্ট্রেশন ব্যর্থ হয়েছে: ${e.toString()}");
     } finally {
@@ -410,29 +418,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                       ],
                     ),
                   ),
-                  const SizedBox(height: 24),
-
-                  // Bypass Button
-                  TextButton.icon(
-                    onPressed: () {
-                      // Bypass to Calculator directly
-                      Navigator.pushReplacementNamed(context, '/home');
-                    },
-                    icon: const Icon(Icons.arrow_forward_rounded, color: cAccent2),
-                    label: Text(
-                      "সরাসরি প্রবেশ করুন (Bypass Flow)",
-                      style: GoogleFonts.hindSiliguri(
-                        color: cAccent2,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        decoration: TextDecoration.underline,
-                        decorationColor: cAccent2,
-                      ),
-                    ),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
+                  
                 ],
               ),
             ),
