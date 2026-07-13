@@ -43,42 +43,44 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   }
 
   Future<void> _checkAutoLoginAndLicensing() async {
-    // সবার আগে update check করা (internet থাকলে)
-    final updateInfo = await DatabaseService.instance.checkForUpdate();
-    if (updateInfo != null && mounted) {
-      await showUpdateDialog(context, updateInfo);
-      if (updateInfo['force_update'] == true) return; // force হলে এখানেই আটকে থাকবে
-    }
+  // ✅ cached user না থাকলে কিছু check করব না
+  // Login screen এ থাকুক, user নিজে login করবে
+  final profile = DatabaseService.instance.currentUserProfile;
+  if (profile == null) return;
 
-    final check = await DatabaseService.instance.checkOfflineSubscription();
-    if (!check['status']) {
-      if (mounted) {
-        Navigator.pushReplacementNamed(context, '/deactivated');
-      }
+  final updateInfo = await DatabaseService.instance.checkForUpdate();
+  if (updateInfo != null && mounted) {
+    await showUpdateDialog(context, updateInfo);
+    if (updateInfo['force_update'] == true) return;
+  }
+
+  final check = await DatabaseService.instance.checkOfflineSubscription();
+  if (!check['status']) {
+    if (mounted) Navigator.pushReplacementNamed(context, '/deactivated');
+    return;
+  }
+
+  if (profile != null) {
+    final onlineState = await DatabaseService.instance.checkOnlineStatus();
+    if (!mounted) return;
+
+    if (onlineState['is_active'] == false) {
+      Navigator.pushReplacementNamed(
+        context,
+        '/deactivated',
+        arguments: onlineState['reason']?.toString(),
+      );
       return;
     }
 
-    final profile = DatabaseService.instance.currentUserProfile;
-    if (profile != null) {
-      if (!DatabaseService.instance.hasAccess(profile)) {
-        if (mounted) Navigator.pushReplacementNamed(context, '/deactivated');
-      } else {
-        if (mounted) Navigator.pushReplacementNamed(context, '/home');
-      }
-
-      DatabaseService.instance.checkOnlineStatus().then((onlineState) {
-        if (onlineState['is_active'] == false) {
-          if (mounted) {
-            Navigator.pushReplacementNamed(
-              context,
-              '/deactivated',
-              arguments: onlineState['reason']?.toString(),
-            );
-          }
-        }
-      });
+    final freshProfile = DatabaseService.instance.currentUserProfile;
+    if (freshProfile != null && DatabaseService.instance.hasAccess(freshProfile)) {
+      Navigator.pushReplacementNamed(context, '/home');
+    } else {
+      Navigator.pushReplacementNamed(context, '/deactivated');
     }
   }
+}
 
   @override
   void dispose() {
@@ -102,14 +104,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       );
       
       if (profile != null) {
-        if (!DatabaseService.instance.hasAccess(profile)) {
-          if (mounted) Navigator.pushReplacementNamed(context, '/deactivated');
-        } else {
-          if (mounted) Navigator.pushReplacementNamed(context, '/home');
-        }
-    } else {
-       _showError("লগইন ব্যর্থ হয়েছে! অনুগ্রহ করে আবার চেষ্টা করুন।");
-    }
+  if (mounted) Navigator.pushReplacementNamed(context, '/home');
+} else {
+  _showError("লগইন ব্যর্থ হয়েছে! অনুগ্রহ করে আবার চেষ্টা করুন।");
+}
     } catch (e) {
       _showError("লগইন ব্যর্থ হয়েছে: ${e.toString()}");
     } finally {
@@ -129,14 +127,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       );
       
       if (profile != null) {
-        if (!DatabaseService.instance.hasAccess(profile)) {
-          if (mounted) Navigator.pushReplacementNamed(context, '/deactivated');
-        } else {
-          if (mounted) Navigator.pushReplacementNamed(context, '/home');
-        }
-    } else {
-       _showError("রেজিস্ট্রেশন ব্যর্থ হয়েছে!");
-    }
+  if (mounted) Navigator.pushReplacementNamed(context, '/home');
+} else {
+  _showError("রেজিস্ট্রেশন ব্যর্থ হয়েছে!");
+}
     } catch (e) {
       _showError("রেজিস্ট্রেশন ব্যর্থ হয়েছে: ${e.toString()}");
     } finally {

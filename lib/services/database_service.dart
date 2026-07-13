@@ -468,7 +468,23 @@ class DatabaseService {
     }
     try {
       final userId = _client.auth.currentUser?.id;
-      if (userId == null) return {'is_active': false, 'reason': 'no_user'};
+if (userId == null) {
+  // ✅ FIX: currentUser null মানে logout না
+  // Supabase session expire বা initialize এ clear হতে পারে
+  // এক্ষেত্রে cached local data দিয়ে চালিয়ে যাব
+  final prefs = await SharedPreferences.getInstance();
+  final cachedProfile = {
+    'is_active': prefs.getBool('is_active') ?? true,
+    'is_paid': prefs.getBool('is_paid') ?? false,
+    'subscription_expires_at': prefs.getString('subscription_expires_at'),
+    'trial_ends_at': prefs.getString('trial_ends_at'),
+  };
+  return {
+    ...cachedProfile,
+    'has_access': hasAccess(cachedProfile),
+    'days_remaining': daysRemaining(cachedProfile),
+  };
+}
 
       final profileData = await _client
           .from('profiles')
