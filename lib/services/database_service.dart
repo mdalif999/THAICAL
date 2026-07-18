@@ -92,6 +92,38 @@ class DatabaseService {
       print('DatabaseService: Init Error: $e. Fallback to mock.');
     }
 
+    // ✅ Supabase-এ আগে থেকেই একটা persisted/auto-restored session থাকলে
+    // সেটা এই ডিভাইসেরই কিনা যাচাই করা — নাহলে জোর করে সাইন-আউট
+    final existingUser = _client.auth.currentUser;
+    if (existingUser != null) {
+      try {
+        final deviceId = await _getOrCreateDeviceId();
+        final profileData = await _client
+            .from('profiles')
+            .select()
+            .eq('id', existingUser.id)
+            .maybeSingle();
+
+        final serverSessionId = profileData?['active_session_id']?.toString();
+
+        if (profileData == null ||
+            profileData['is_active'] == false ||
+            (serverSessionId != null && serverSessionId.isNotEmpty && serverSessionId != deviceId)) {
+          print('Auto-restore REJECTED: session mismatch or inactive. Forcing sign out.');
+          await _client.auth.signOut();
+          currentUserProfileNotifier.value = null;
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.clear();
+        } else {
+          print('Auto-restore ACCEPTED: session matches this device.');
+          currentUserProfileNotifier.value = profileData;
+          await saveProfileLocally(profileData);
+        }
+      } catch (e) {
+        print('Auto-restore check failed: $e');
+      }
+    }
+
     if (currentUserProfile != null) {
       startSessionMonitoring();
     }
