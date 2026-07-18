@@ -1,4 +1,7 @@
 import 'dart:convert';
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:system_clock/system_clock.dart';
@@ -10,9 +13,9 @@ import 'package:uuid/uuid.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 class DatabaseService {
-  static const String supabaseUrl = 'https://zudcctqnachqaqewkzhp.supabase.co';
-
-  static const String supabaseKey = 'sb_publishable_EBJt_mnXXfyIJv4GsM8GwA_-w33rVhI';
+  final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+  static final String supabaseUrl = dotenv.env['SUPABASE_URL'] ?? '';
+  static final String supabaseKey = dotenv.env['SUPABASE_KEY'] ?? '';
 
   static final DatabaseService instance = DatabaseService._internal();
   DatabaseService._internal();
@@ -38,8 +41,8 @@ class DatabaseService {
     return supabaseUrl.contains('placeholder') || supabaseKey == 'placeholder_key';
   }
 
-  Map<String, dynamic>? _currentUserProfile;
-  Map<String, dynamic>? get currentUserProfile => _currentUserProfile;
+  final ValueNotifier<Map<String, dynamic>?> currentUserProfileNotifier = ValueNotifier<Map<String, dynamic>?>(null);
+  Map<String, dynamic>? get currentUserProfile => currentUserProfileNotifier.value;
 
   Future<void> initialize() async {
     final prefs = await SharedPreferences.getInstance();
@@ -64,7 +67,7 @@ class DatabaseService {
     // Load cached profile if exists
     final cachedEmail = prefs.getString('cached_phone_email');
     if (cachedEmail != null) {
-      _currentUserProfile = {
+      currentUserProfileNotifier.value = {
         'id': prefs.getString('cached_uid') ?? 'cached-user',
         'name': prefs.getString('cached_name') ?? 'cached-user',
         'phone_email': cachedEmail,
@@ -87,6 +90,10 @@ class DatabaseService {
       print('DatabaseService: Supabase Initialized.');
     } catch (e) {
       print('DatabaseService: Init Error: $e. Fallback to mock.');
+    }
+
+    if (currentUserProfile != null) {
+      startSessionMonitoring();
     }
   }
 
@@ -153,8 +160,7 @@ class DatabaseService {
         ? DateTime.tryParse(profile['subscription_expires_at'].toString())?.toUtc()
         : null;
     final isPaidValid = profile['is_paid'] == true &&
-        paidExpiry != null &&
-        now.isBefore(paidExpiry);
+        (paidExpiry == null || now.isBefore(paidExpiry));
 
     final trialExpiry = profile['trial_ends_at'] != null
         ? DateTime.tryParse(profile['trial_ends_at'].toString())?.toUtc()
@@ -178,8 +184,13 @@ class DatabaseService {
     final paidExpiry = profile['subscription_expires_at'] != null
         ? DateTime.tryParse(profile['subscription_expires_at'].toString())?.toUtc()
         : null;
-    if (profile['is_paid'] == true && paidExpiry != null && now.isBefore(paidExpiry)) {
-      return paidExpiry.difference(now);
+    if (profile['is_paid'] == true) {
+      if (paidExpiry == null) {
+        return const Duration(days: 36500); // 100 years for lifetime paid
+      }
+      if (now.isBefore(paidExpiry)) {
+        return paidExpiry.difference(now);
+      }
     }
 
     final trialExpiry = profile['trial_ends_at'] != null
@@ -197,6 +208,10 @@ class DatabaseService {
     final remaining = timeRemaining(profile);
     if (remaining == null) return null;
 
+    if (remaining.inDays > 18250) {
+      return "আনলিমিটেড";
+    }
+
     if (remaining.inDays >= 1) {
       return "${remaining.inDays} দিন";
     } else if (remaining.inHours >= 1) {
@@ -211,6 +226,7 @@ class DatabaseService {
   bool shouldShowReminder(Map<String, dynamic> profile) {
     final remaining = timeRemaining(profile);
     if (remaining == null) return false;
+    if (remaining.inDays > 18250) return false;
     return remaining.inSeconds >= 0 && remaining.inDays <= reminderDaysBefore;
   }
 
@@ -243,7 +259,7 @@ class DatabaseService {
         'subscription_expires_at': DateTime.now().toUtc().add(const Duration(days: 30)).toIso8601String(),
         'trial_ends_at': null,
       };
-      _currentUserProfile = profile;
+      currentUserProfileNotifier.value = profile;
       await saveProfileLocally(profile);
       return profile;
     }
@@ -263,6 +279,11 @@ class DatabaseService {
             .maybeSingle();
 
         if (profileData != null) {
+          if (profileData['is_active'] == false) {
+            await _client.auth.signOut();
+            throw Exception('deactivated');
+          }
+
           // এই ডিভাইসকে active session হিসেবে সেট করা (আগের ডিভাইস auto logout হয়ে যাবে)
           final deviceId = await _getOrCreateDeviceId();
           await _client
@@ -274,8 +295,9 @@ class DatabaseService {
           // Expire হয়ে থাকলে DB তে is_paid সত্যিকারভাবে false করে দেওয়া
           await _syncExpiredPaidStatus(profileData);
 
-          _currentUserProfile = profileData;
+          currentUserProfileNotifier.value = profileData;
           await saveProfileLocally(profileData);
+          startSessionMonitoring();
           return profileData;
         }
       }
@@ -304,8 +326,9 @@ class DatabaseService {
         'subscription_expires_at': null,
         'trial_ends_at': trialEndsAt,
       };
-      _currentUserProfile = profile;
+      currentUserProfileNotifier.value = profile;
       await saveProfileLocally(profile);
+      startSessionMonitoring();
       return profile;
     }
 
@@ -328,8 +351,9 @@ class DatabaseService {
         };
 
         await _client.from('profiles').insert(profileMap);
-        _currentUserProfile = profileMap;
+        currentUserProfileNotifier.value = profileMap;
         await saveProfileLocally(profileMap);
+        startSessionMonitoring();
         return profileMap;
       }
     } catch (e) {
@@ -339,8 +363,75 @@ class DatabaseService {
     return null;
   }
 
+  Timer? _sessionTimer;
+
+  void startSessionMonitoring() {
+    _sessionTimer?.cancel();
+    _sessionTimer = Timer.periodic(const Duration(seconds: 45), (timer) async {
+      final userId = isFallbackMode ? 'mock-user-uuid' : _client.auth.currentUser?.id;
+      if (userId == null || currentUserProfile == null) {
+        timer.cancel();
+        return;
+      }
+
+      // 1. First run the comprehensive offline checks (clock tampering, local expiry, etc.)
+      final offlineCheck = await checkOfflineSubscription();
+      if (!offlineCheck['status']) {
+        timer.cancel();
+        final reason = offlineCheck['reason']?.toString() ?? 'blocked';
+        final name = currentUserProfile?['name']?.toString();
+        final phoneEmail = currentUserProfile?['phone_email']?.toString();
+
+        await logout();
+
+        navigatorKey.currentState?.pushNamedAndRemoveUntil(
+          '/deactivated',
+          (route) => false,
+          arguments: {
+            'reason': reason,
+            'name': name,
+            'phone_email': phoneEmail,
+          },
+        );
+        return;
+      }
+
+      // 2. Sync and check online status if possible
+      final onlineState = await checkOnlineStatus();
+      final isActive = onlineState['is_active'] == true;
+      final hasAcc = onlineState['has_access'] == true;
+
+      if (!isActive || !hasAcc) {
+        timer.cancel();
+        final reason = onlineState['reason']?.toString() ?? 
+            (!isActive ? 'blocked' : 'expired');
+            
+        final name = currentUserProfile?['name']?.toString();
+        final phoneEmail = currentUserProfile?['phone_email']?.toString();
+
+        await logout();
+
+        navigatorKey.currentState?.pushNamedAndRemoveUntil(
+          '/deactivated',
+          (route) => false,
+          arguments: {
+            'reason': reason,
+            'name': name,
+            'phone_email': phoneEmail,
+          },
+        );
+      }
+    });
+  }
+
+  void stopSessionMonitoring() {
+    _sessionTimer?.cancel();
+    _sessionTimer = null;
+  }
+
   Future<void> logout() async {
-    _currentUserProfile = null;
+    stopSessionMonitoring();
+    currentUserProfileNotifier.value = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear(); // Clear local cache on logout
     if (!isFallbackMode) {
@@ -447,7 +538,9 @@ class DatabaseService {
     final expiry = profileData['subscription_expires_at'] != null
         ? DateTime.tryParse(profileData['subscription_expires_at'].toString())?.toUtc()
         : null;
-    final expired = expiry == null || DateTime.now().toUtc().isAfter(expiry);
+    if (expiry == null) return; // If expiry is null, it's unlimited. Do not auto-expire!
+    
+    final expired = DateTime.now().toUtc().isAfter(expiry);
     if (expired) {
       try {
         await _client
@@ -506,7 +599,7 @@ if (userId == null) {
         // Expire হয়ে থাকলে DB তে is_paid সত্যি করে false করে দেওয়া
         await _syncExpiredPaidStatus(profileData);
 
-        _currentUserProfile = profileData;
+        currentUserProfileNotifier.value = profileData;
         await saveProfileLocally(profileData);
         return {
           'is_active': profileData['is_active'] == true,
@@ -757,9 +850,9 @@ if (userId == null) {
   final List<ThaiColorSet> _mockThaiColorSets = [
     ThaiColorSet(
       id: 1,
-      brand: 'EDM 3"',
+      brand: 'EDM',
       color: 'Silver',
-      thick: 1.2,
+      profileSize: '3"',
       specLength: "21'-0\"",
       priceOs: 2936,
       priceOt: 4089,
@@ -768,12 +861,14 @@ if (userId == null) {
       priceIl: 2586,
       priceSt: 2632,
       priceSb: 3758,
+      priceNs: null,
+      priceNb: null,
     ),
     ThaiColorSet(
       id: 2,
-      brand: 'EDM 4"',
+      brand: 'EDM',
       color: 'Bronze',
-      thick: 1.2,
+      profileSize: '4"',
       specLength: "21'-0\"",
       priceOs: 3562,
       priceOt: 4805,
@@ -782,12 +877,14 @@ if (userId == null) {
       priceIl: 3045,
       priceSt: 2632,
       priceSb: 3758,
+      priceNs: 2500,
+      priceNb: 2200,
     ),
     ThaiColorSet(
       id: 3,
-      brand: 'EDW Silver 3"',
+      brand: 'EDW Silver',
       color: 'Black/SS',
-      thick: 1.2,
+      profileSize: '3"',
       specLength: "21'-0\"",
       priceOs: 2438,
       priceOt: 3894,
@@ -796,12 +893,14 @@ if (userId == null) {
       priceIl: 1085,
       priceSt: 2478,
       priceSb: 3533,
+      priceNs: null,
+      priceNb: null,
     ),
     ThaiColorSet(
       id: 4,
-      brand: 'EDC 3"',
+      brand: 'EDC',
       color: 'Silver',
-      thick: 1.5,
+      profileSize: '3"',
       specLength: "21'-0\"",
       priceOs: 2510,
       priceOt: 3970,
@@ -810,6 +909,8 @@ if (userId == null) {
       priceIl: 2959,
       priceSt: 2559,
       priceSb: 3646,
+      priceNs: null,
+      priceNb: null,
     ),
   ];
 

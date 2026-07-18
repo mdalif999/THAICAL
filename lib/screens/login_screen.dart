@@ -60,25 +60,23 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     return;
   }
 
-  if (profile != null) {
-    final onlineState = await DatabaseService.instance.checkOnlineStatus();
-    if (!mounted) return;
+  final onlineState = await DatabaseService.instance.checkOnlineStatus();
+  if (!mounted) return;
 
-    if (onlineState['is_active'] == false) {
-      Navigator.pushReplacementNamed(
-        context,
-        '/deactivated',
-        arguments: onlineState['reason']?.toString(),
-      );
-      return;
-    }
+  if (onlineState['is_active'] == false) {
+    Navigator.pushReplacementNamed(
+      context,
+      '/deactivated',
+      arguments: onlineState['reason']?.toString(),
+    );
+    return;
+  }
 
-    final freshProfile = DatabaseService.instance.currentUserProfile;
-    if (freshProfile != null && DatabaseService.instance.hasAccess(freshProfile)) {
-      Navigator.pushReplacementNamed(context, '/home');
-    } else {
-      Navigator.pushReplacementNamed(context, '/deactivated');
-    }
+  final freshProfile = DatabaseService.instance.currentUserProfile;
+  if (freshProfile != null && DatabaseService.instance.hasAccess(freshProfile)) {
+    Navigator.pushReplacementNamed(context, '/home');
+  } else {
+    Navigator.pushReplacementNamed(context, '/deactivated');
   }
 }
 
@@ -104,12 +102,21 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       );
       
       if (profile != null) {
-  if (mounted) Navigator.pushReplacementNamed(context, '/home');
-} else {
-  _showError("লগইন ব্যর্থ হয়েছে! অনুগ্রহ করে আবার চেষ্টা করুন।");
-}
+        if (mounted) Navigator.pushReplacementNamed(context, '/home');
+      } else {
+        _showError("লগইন ব্যর্থ হয়েছে! অনুগ্রহ করে আবার চেষ্টা করুন।");
+      }
     } catch (e) {
-      _showError("লগইন ব্যর্থ হয়েছে: ${e.toString()}");
+      final errStr = e.toString();
+      if (errStr.contains('deactivated') && mounted) {
+        Navigator.pushReplacementNamed(
+          context,
+          '/deactivated',
+          arguments: 'blocked',
+        );
+      } else {
+        _showError("লগইন ব্যর্থ হয়েছে: ${errStr.replaceAll('Exception: ', '')}");
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

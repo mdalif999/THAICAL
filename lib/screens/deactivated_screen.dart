@@ -32,10 +32,21 @@ class _DeactivatedScreenState extends State<DeactivatedScreen> {
   @override
   Widget build(BuildContext context) {
     final user = DatabaseService.instance.currentUserProfile;
-    final overrideReason =
-        ModalRoute.of(context)?.settings.arguments as String?;
-    final userName = user != null ? user['name'] : 'ইউজার';
-    final userPhone = user != null ? user['phone_email'] : '';
+    final args = ModalRoute.of(context)?.settings.arguments;
+    String? overrideReason;
+    String? nameFromArgs;
+    String? phoneFromArgs;
+
+    if (args is String) {
+      overrideReason = args;
+    } else if (args is Map) {
+      overrideReason = args['reason'] as String?;
+      nameFromArgs = args['name'] as String?;
+      phoneFromArgs = args['phone_email'] as String?;
+    }
+
+    final userName = nameFromArgs ?? (user != null ? user['name'] : 'ইউজার');
+    final userPhone = phoneFromArgs ?? (user != null ? user['phone_email'] : '');
 
     return Scaffold(
       backgroundColor: cBg,
@@ -44,21 +55,17 @@ class _DeactivatedScreenState extends State<DeactivatedScreen> {
           child: FutureBuilder<Map<String, dynamic>>(
             future: _checkFuture, // ✅ এখন একবারই call হবে
             builder: (context, snapshot) {
+              final reason = overrideReason ??
+                  (snapshot.connectionState == ConnectionState.done && snapshot.hasData
+                      ? snapshot.data!['reason']?.toString() ?? ''
+                      : '');
+
               String title = "অ্যাক্সেস বন্ধ করা হয়েছে";
               String message =
                   "আপনার অ্যাকাউন্টটি বর্তমানে নিষ্ক্রিয় অবস্থায় রয়েছে।";
               IconData icon = Icons.block_flipped;
 
-              if (overrideReason == 'session_kicked') {
-                title = "অন্য ডিভাইসে লগইন হয়েছে";
-                message =
-                    "আপনার অ্যাকাউন্ট দিয়ে অন্য একটি ডিভাইস/ফোনে লগইন করা হয়েছে। নিরাপত্তার জন্য এই ডিভাইস থেকে সেশন বন্ধ করা হয়েছে। আবার এই ডিভাইসে ব্যবহার করতে চাইলে পুনরায় লগইন করুন।";
-                icon = Icons.phonelink_erase_rounded;
-              } else if (snapshot.connectionState == ConnectionState.done &&
-                  snapshot.hasData) {
-                final result = snapshot.data!;
-                final reason = result['reason']?.toString() ?? '';
-
+              if (reason.isNotEmpty) {
                 switch (reason) {
                   case 'blocked':
                     title = "অ্যাক্সেস বন্ধ করা হয়েছে";

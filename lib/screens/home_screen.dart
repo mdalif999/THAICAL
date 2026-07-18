@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/database_service.dart';
 import 'invoice_detail_screen.dart';
 
@@ -87,67 +88,145 @@ class _HomeScreenState extends State<HomeScreen> {
   child: SafeArea(
     child: Column(
       children: [
-        Container(
-          padding: const EdgeInsets.all(20),
-          width: double.infinity,
-          color: const Color(0xFF0B0E17),
-          child: Builder(builder: (context) {
-            final user = DatabaseService.instance.currentUserProfile;
+        ValueListenableBuilder<Map<String, dynamic>?>(
+          valueListenable: DatabaseService.instance.currentUserProfileNotifier,
+          builder: (context, user, _) {
             final name = user?['name']?.toString() ?? 'ইউজার';
             final phone = user?['phone_email']?.toString() ?? '';
             final isPaid = user?['is_paid'] == true;
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                CircleAvatar(
-                  radius: 28,
-                  backgroundColor: cAccent.withOpacity(0.15),
-                  child: const Icon(Icons.person, color: cAccent, size: 30),
-                ),
-                const SizedBox(height: 10),
-                Text(name, style: GoogleFonts.hindSiliguri(color: cText, fontSize: 16, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 2),
-                Text(phone, style: GoogleFonts.inter(color: cMuted, fontSize: 12)),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: (isPaid ? cGreen : cAccent2).withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(6),
+            return Container(
+              padding: const EdgeInsets.all(20),
+              width: double.infinity,
+              color: const Color(0xFF0B0E17),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  CircleAvatar(
+                    radius: 28,
+                    backgroundColor: cAccent.withOpacity(0.15),
+                    child: const Icon(Icons.person, color: cAccent, size: 30),
                   ),
-                  child: Text(
-                    isPaid ? "✓ পেইড অ্যাকাউন্ট" : "ফ্রি অ্যাকাউন্ট",
-                    style: GoogleFonts.hindSiliguri(
-                        color: isPaid ? cGreen : cAccent2, fontSize: 11, fontWeight: FontWeight.bold),
+                  const SizedBox(height: 10),
+                  Text(name, style: GoogleFonts.hindSiliguri(color: cText, fontSize: 16, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 2),
+                  Text(phone, style: GoogleFonts.inter(color: cMuted, fontSize: 12)),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: (isPaid ? cGreen : cAccent2).withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      isPaid ? "✓ পেইড অ্যাকাউন্ট" : "ফ্রি অ্যাকাউন্ট",
+                      style: GoogleFonts.hindSiliguri(
+                          color: isPaid ? cGreen : cAccent2, fontSize: 11, fontWeight: FontWeight.bold),
+                    ),
                   ),
-                ),
-                if (user != null)
-                  Builder(builder: (context) {
-                    final days = DatabaseService.instance.daysRemaining(user);
-                    final dateStr = isPaid
-                        ? user['subscription_expires_at']?.toString()
-                        : user['trial_ends_at']?.toString();
-                    if (dateStr == null) return const SizedBox.shrink();
-                    final localDate = DateTime.parse(dateStr).toLocal();
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(
-                        "মেয়াদ: ${localDate.day}/${localDate.month}/${localDate.year}"
-                        "${days != null ? " (আর $days দিন)" : ""}",
-                        style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11),
-                      ),
-                    );
-                  }),
-              ],
+                  if (user != null)
+                    Builder(builder: (context) {
+                      final remaining = DatabaseService.instance.timeRemaining(user);
+                      if (remaining != null && remaining.inDays > 18250) {
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(
+                            "মেয়াদ: আনলিমিটেড",
+                            style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11),
+                          ),
+                        );
+                      }
+
+                      final days = DatabaseService.instance.daysRemaining(user);
+                      final dateStr = isPaid
+                          ? user['subscription_expires_at']?.toString()
+                          : user['trial_ends_at']?.toString();
+                      if (dateStr == null) return const SizedBox.shrink();
+                      final localDate = DateTime.parse(dateStr).toLocal();
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          "মেয়াদ: ${localDate.day}/${localDate.month}/${localDate.year}"
+                          "${days != null ? " (আর $days দিন)" : ""}",
+                          style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11),
+                        ),
+                      );
+                    }),
+                ],
+              ),
             );
-          }),
+          },
         ),
         const Divider(color: cBorder, height: 1),
         ListTile(
           leading: const Icon(Icons.help_outline_rounded, color: cMuted),
           title: Text("সাহায্য / যোগাযোগ", style: GoogleFonts.hindSiliguri(color: cText)),
           onTap: () {
-            // চাইলে এখানে WhatsApp/কল লিংক যোগ করা যাবে
+            showModalBottomSheet(
+              context: context,
+              backgroundColor: cCard,
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+              ),
+              builder: (ctx) => Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 40, height: 4,
+                      decoration: BoxDecoration(
+                        color: cBorder, borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text("যোগাযোগ", style: GoogleFonts.hindSiliguri(color: cText, fontSize: 16, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 16),
+                    ListTile(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      tileColor: const Color(0xFF12151F),
+                      leading: const Icon(Icons.chat_rounded, color: Color(0xFF25D366)),
+                      title: Text("WhatsApp-এ যোগাযোগ", style: GoogleFonts.hindSiliguri(color: cText)),
+                      subtitle: Text("01710460274", style: GoogleFonts.inter(color: cMuted, fontSize: 11)),
+                      onTap: () async {
+                        final uri = Uri.parse("https://wa.me/8801710460274");
+                        if (await canLaunchUrl(uri)) {
+                          await launchUrl(uri, mode: LaunchMode.externalApplication);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    ListTile(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      tileColor: const Color(0xFF12151F),
+                      leading: const Icon(Icons.call_rounded, color: cAccent),
+                      title: Text("কল করুন (১)", style: GoogleFonts.hindSiliguri(color: cText)),
+                      subtitle: Text("01305232039", style: GoogleFonts.inter(color: cMuted, fontSize: 11)),
+                      onTap: () async {
+                        final uri = Uri.parse("tel:+8801305232039");
+                        if (await canLaunchUrl(uri)) {
+                          await launchUrl(uri);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    ListTile(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      tileColor: const Color(0xFF12151F),
+                      leading: const Icon(Icons.call_rounded, color: cAccent),
+                      title: Text("কল করুন (২)", style: GoogleFonts.hindSiliguri(color: cText)),
+                      subtitle: Text("01787203830", style: GoogleFonts.inter(color: cMuted, fontSize: 11)),
+                      onTap: () async {
+                        final uri = Uri.parse("tel:+8801787203830");
+                        if (await canLaunchUrl(uri)) {
+                          await launchUrl(uri);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                ),
+              ),
+            );
           },
         ),
         ListTile(

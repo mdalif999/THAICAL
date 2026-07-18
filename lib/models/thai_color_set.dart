@@ -2,7 +2,7 @@ class ThaiColorSet {
   final int id;
   final String brand;
   final String color;
-  final double thick;
+  final String profileSize;
   final String specLength;
   final int priceOs;
   final int priceOt;
@@ -11,12 +11,14 @@ class ThaiColorSet {
   final int priceIl;
   final int priceSt;
   final int priceSb;
+  final int? priceNs;
+  final int? priceNb;
 
   ThaiColorSet({
     required this.id,
     required this.brand,
     required this.color,
-    required this.thick,
+    required this.profileSize,
     required this.specLength,
     required this.priceOs,
     required this.priceOt,
@@ -25,6 +27,8 @@ class ThaiColorSet {
     required this.priceIl,
     required this.priceSt,
     required this.priceSb,
+    this.priceNs,
+    this.priceNb,
   });
 
   factory ThaiColorSet.fromJson(Map<String, dynamic> json) {
@@ -32,7 +36,7 @@ class ThaiColorSet {
       id: json['id'] as int? ?? 0,
       brand: json['brand']?.toString() ?? '',
       color: json['color']?.toString() ?? '',
-      thick: (json['thick'] as num?)?.toDouble() ?? 1.2,
+      profileSize: json['profile_size']?.toString() ?? (json['thick'] != null ? '${json['thick']} mm' : '3"'),
       specLength: json['spec_length']?.toString() ?? "21'-0\"",
       priceOs: json['price_os'] as int? ?? 0,
       priceOt: json['price_ot'] as int? ?? 0,
@@ -41,6 +45,8 @@ class ThaiColorSet {
       priceIl: json['price_il'] as int? ?? 0,
       priceSt: json['price_st'] as int? ?? 0,
       priceSb: json['price_sb'] as int? ?? 0,
+      priceNs: json['price_ns'] as int?,
+      priceNb: json['price_nb'] as int?,
     );
   }
 
@@ -49,7 +55,7 @@ class ThaiColorSet {
       'id': id,
       'brand': brand,
       'color': color,
-      'thick': thick,
+      'profile_size': profileSize,
       'spec_length': specLength,
       'price_os': priceOs,
       'price_ot': priceOt,
@@ -58,6 +64,8 @@ class ThaiColorSet {
       'price_il': priceIl,
       'price_st': priceSt,
       'price_sb': priceSb,
+      'price_ns': priceNs,
+      'price_nb': priceNb,
     };
   }
 }

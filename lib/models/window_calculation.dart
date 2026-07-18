@@ -15,7 +15,7 @@ class WindowCalculation {
   final double labor;
   final double advance;
 
-  // Optional manual override values for the 7 profiles
+  // Optional manual override values for the profiles
   final double? overrideOs;
   final double? overrideOt;
   final double? overrideOhb;
@@ -23,6 +23,8 @@ class WindowCalculation {
   final double? overrideIl;
   final double? overrideSt;
   final double? overrideSb;
+  final double? overrideNs;
+  final double? overrideNh;
 
   WindowCalculation({
     required this.windowsList,
@@ -43,6 +45,8 @@ class WindowCalculation {
     this.overrideIl,
     this.overrideSt,
     this.overrideSb,
+    this.overrideNs,
+    this.overrideNh,
   });
 
   // Helper to fetch price for hardware with safe hardcoded fallbacks
@@ -78,47 +82,66 @@ class WindowCalculation {
     return inch / 192.0;
   }
 
-  // Calculate cut inches breakdown
+  // Calculate cut inches breakdown (মিস্ত্রিদের খাঁটি বাংলাদেশি প্র্যাক্টিক্যাল হিসাব)
   Map<String, double> calcCutInches() {
-    if (overrideOs != null &&
-        overrideOt != null &&
-        overrideOhb != null &&
-        overrideSl != null &&
-        overrideIl != null &&
-        overrideSt != null &&
-        overrideSb != null) {
-      return {
-        'os': overrideOs!,
-        'ot': overrideOt!,
-        'ohb': overrideOhb!,
-        'sl': overrideSl!,
-        'il': overrideIl!,
-        'st': overrideSt!,
-        'sb': overrideSb!,
-      };
-    }
+    double os = overrideOs ?? 0;
+    double ot = overrideOt ?? 0;
+    double ohb = overrideOhb ?? 0;
+    double sl = overrideSl ?? 0;
+    double il = overrideIl ?? 0;
+    double st = overrideSt ?? 0;
+    double sb = overrideSb ?? 0;
+    double ns = overrideNs ?? 0;
+    double nh = overrideNh ?? 0;
 
-    double os = 0, ot = 0, ohb = 0, sl = 0, il = 0, st = 0, sb = 0;
-    for (var w in windowsList) {
-      double width = (w['w'] as num).toDouble();
-      double height = (w['h'] as num).toDouble();
-      int qty = (w['qty'] as num).toInt();
-      os += height * 2 * qty;
-      ot += width * qty;
-      ohb += width * qty;
-      sl += (height - 1.5) * 2 * qty;
-      il += (height - 1.5) * 2 * qty;
-      st += ((width - 1.5) / 2) * 2 * qty;
-      sb += ((width - 1.5) / 2) * 2 * qty;
+    if (overrideOs == null ||
+        overrideOt == null ||
+        overrideOhb == null ||
+        overrideSl == null ||
+        overrideIl == null ||
+        overrideSt == null ||
+        overrideSb == null ||
+        (selectedThaiColorSet?.profileSize.contains('4') == true && (overrideNs == null || overrideNh == null))) {
+      os = 0; ot = 0; ohb = 0; sl = 0; il = 0; st = 0; sb = 0;
+      ns = 0; nh = 0;
+      
+      for (var w in windowsList) {
+        double width = (w['w'] as num).toDouble();
+        double height = (w['h'] as num).toDouble();
+        int qty = (w['qty'] as num).toInt();
+        
+        // ৫বাই৫ জানালার জন্য ১২০ ইঞ্চি হিসাব (উচ্চতা * ২ টা খাড়া)
+        os += height * 2 * qty;
+        
+        // ৫বাই৫ জানালার জন্য ৬০ ইঞ্চি হিসাব (১ টা করে আড়াআড়ি আউটার ফ্রেম)
+        ot += width * qty;
+        ohb += width * qty;
+        
+        // পাল্লা লক ও ইন্টারলক ডিরেক্ট ১২০ ইঞ্চি (কোনো মাইনাস ছাড়া)
+        sl += height * 2 * qty;
+        il += height * 2 * qty;
+        
+        // পাল্লা টপ ও বটম ডিরেক্ট ৬০ ইঞ্চি
+        st += width * qty;
+        sb += width * qty;
+
+        // ৪ ইঞ্চি ফ্রেম হলে মশার নেটের ৩ সাইডের ১৮০ ইঞ্চি এবং ৪ ইঞ্চি করে নেট হ্যান্ডেলের বার কাটিং
+        if (selectedThaiColorSet?.profileSize.contains('4') == true) {
+          ns += (height * 2 + width) * qty; // ৬০*২ + ৬০ = ১৮০ ইঞ্চি
+          nh += 4.0 * qty; // প্রতি জানালায় ৪ ইঞ্চি বারের খরচ যোগ হবে
+        }
+      }
     }
     return {
-      'os': os,
-      'ot': ot,
-      'ohb': ohb,
-      'sl': sl,
-      'il': il,
-      'st': st,
-      'sb': sb,
+      'os': overrideOs ?? os,
+      'ot': overrideOt ?? ot,
+      'ohb': overrideOhb ?? ohb,
+      'sl': overrideSl ?? sl,
+      'il': overrideIl ?? il,
+      'st': overrideSt ?? st,
+      'sb': overrideSb ?? sb,
+      'ns': overrideNs ?? ns,
+      'nh': overrideNh ?? nh,
     };
   }
 
@@ -126,16 +149,22 @@ class WindowCalculation {
   int calcAluTotal() {
     if (selectedThaiColorSet == null) return 0;
     final cuts = calcCutInches();
-    return (inchToBars(cuts['os']!) * selectedThaiColorSet!.priceOs +
+    double total = (inchToBars(cuts['os']!) * selectedThaiColorSet!.priceOs +
         inchToBars(cuts['ot']!) * selectedThaiColorSet!.priceOt +
         inchToBars(cuts['ohb']!) * selectedThaiColorSet!.priceOhb +
         inchToBars(cuts['sl']!) * selectedThaiColorSet!.priceSl +
         inchToBars(cuts['il']!) * selectedThaiColorSet!.priceIl +
         inchToBars(cuts['st']!) * selectedThaiColorSet!.priceSt +
-        inchToBars(cuts['sb']!) * selectedThaiColorSet!.priceSb).round();
+        inchToBars(cuts['sb']!) * selectedThaiColorSet!.priceSb);
+
+    if (selectedThaiColorSet!.profileSize.contains('4')) {
+      final nsPrice = selectedThaiColorSet!.priceNs ?? 0;
+      final nbPrice = selectedThaiColorSet!.priceNb ?? 0;
+      total += inchToBars(cuts['ns']!) * nsPrice + inchToBars(cuts['nh']!) * nbPrice;
+    }
+    return total.round();
   }
 
-  // Calculate total hardware accessories cost
   // Calculate total hardware cost — sqft ভিত্তিক rate, override করা যায়
   double calcHwTotal() {
     return calcTotalSft() * hwRatePerSft;

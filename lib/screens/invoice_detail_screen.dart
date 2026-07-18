@@ -22,12 +22,17 @@ class InvoiceDetailScreen extends StatelessWidget {
         (m) => '${m[1]},',
       );
 
+  double _inchToBars(double inch) => inch / 192.0;
+
   @override
   Widget build(BuildContext context) {
     final windows = (invoice['windows'] as List?) ?? [];
     final hasDetails = windows.isNotEmpty;
     final due = (invoice['due'] as num?)?.toDouble() ?? 0;
     final isPaid = due <= 0;
+    final cuts = (invoice['cuts'] as Map?) ?? {};
+    final cutPrices = (invoice['cutPrices'] as Map?) ?? {};
+    final totalSft = (invoice['totalSft'] as num?)?.toDouble() ?? 0;
 
     return Scaffold(
       backgroundColor: cBg,
@@ -83,8 +88,13 @@ class InvoiceDetailScreen extends StatelessWidget {
                     _buildInfoRow("থাই ব্র্যান্ড", invoice['brand']?.toString() ?? '-'),
                     if ((invoice['color']?.toString() ?? '').isNotEmpty)
                       _buildInfoRow("কালার", invoice['color'].toString()),
-                    if (invoice['thickness'] != null)
-                      _buildInfoRow("পুরুত্ব", "${invoice['thickness']} mm"),
+                    if (invoice['profile_size'] != null || invoice['thickness'] != null)
+                      _buildInfoRow(
+                        invoice['profile_size'] != null ? "জানালার ধরন" : "পুরুত্ব",
+                        invoice['profile_size'] != null
+                            ? (invoice['profile_size'].toString().contains('4') ? '৪" (নেট সহ)' : '৩" (নেট ছাড়া)')
+                            : "${invoice['thickness']} mm",
+                      ),
                     if ((invoice['glassBrand']?.toString() ?? '').isNotEmpty)
                       _buildInfoRow("গ্লাস", invoice['glassBrand'].toString()),
                   ],
@@ -117,24 +127,26 @@ class InvoiceDetailScreen extends StatelessWidget {
                               color: const Color(0xFF12151F),
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(color: cBorder)),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Expanded(
-                                child: Text("${w['name']}",
-                                    style: GoogleFonts.hindSiliguri(color: cText, fontSize: 13, fontWeight: FontWeight.bold)),
-                              ),
-                              Text("${width.toStringAsFixed(0)}\"×${height.toStringAsFixed(0)}\" ×${qty}",
-                                  style: GoogleFonts.inter(color: cMuted, fontSize: 12)),
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(color: cAccent, borderRadius: BorderRadius.circular(4)),
-                                child: Text("${sft.toStringAsFixed(1)} Sft",
-                                    style: GoogleFonts.inter(color: cBg, fontSize: 11, fontWeight: FontWeight.bold)),
-                              ),
-                            ],
-                          ),
+                          child: Column(children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text("${w['name']}",
+                                      style: GoogleFonts.hindSiliguri(color: cText, fontSize: 13, fontWeight: FontWeight.bold)),
+                                ),
+                                Text("${width.toStringAsFixed(0)}\"×${height.toStringAsFixed(0)}\" ×${qty}",
+                                    style: GoogleFonts.inter(color: cMuted, fontSize: 12)),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(color: cAccent, borderRadius: BorderRadius.circular(4)),
+                                  child: Text("${sft.toStringAsFixed(1)} Sft",
+                                      style: GoogleFonts.inter(color: cBg, fontSize: 11, fontWeight: FontWeight.bold)),
+                                ),
+                              ],
+                            ),
+                          ]),
                         );
                       }),
                     if (hasDetails && invoice['totalSft'] != null) ...[
@@ -149,6 +161,62 @@ class InvoiceDetailScreen extends StatelessWidget {
                 )),
                 const SizedBox(height: 12),
 
+                // ── অ্যালুমিনিয়াম কাটিং বিবরণ ──
+                if (cuts.isNotEmpty) ...[
+                  _buildCard(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("🔩 অ্যালুমিনিয়াম কাটিং বিবরণ",
+                          style: GoogleFonts.hindSiliguri(color: cText, fontSize: 14, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 10),
+                      // Header row - Bangla labels
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Row(children: [
+                          Expanded(flex: 3, child: Text("সেকশন", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11))),
+                          SizedBox(width: 50, child: Text("ইঞ্চি", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.right)),
+                          SizedBox(width: 50, child: Text("বার", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.center)),
+                          SizedBox(width: 40, child: Text("দর/বার", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.right)),
+                          SizedBox(width: 55, child: Text("দাম", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.right)),
+                        ]),
+                      ),
+                      const Divider(color: cBorder, height: 1),
+                      const SizedBox(height: 6),
+                      _buildCutRow("O/S আউটার খাড়া", cuts['os'], cutPrices['os']),
+                      _buildCutRow("O/T আউটার টপ", cuts['ot'], cutPrices['ot']),
+                      _buildCutRow("O/B আউটার বটম", cuts['ohb'], cutPrices['ohb']),
+                      _buildCutRow("S/L পাল্লা লক", cuts['sl'], cutPrices['sl']),
+                      _buildCutRow("I/L পাল্লা ইন্টারলক", cuts['il'], cutPrices['il']),
+                      _buildCutRow("S/T পাল্লা টপ", cuts['st'], cutPrices['st']),
+                      _buildCutRow("S/B পাল্লা বটম", cuts['sb'], cutPrices['sb']),
+                      if (invoice['profile_size']?.toString().contains('4') == true) ...[
+                        _buildCutRow("N/S নেট সেকশন", cuts['ns'], cutPrices['ns']),
+                        _buildCutRow("N/H নেট হ্যান্ডেল", cuts['nh'], cutPrices['nb']),
+                      ],
+                      const Divider(color: cBorder, height: 16),
+                      _buildMoneyRow("মোট অ্যালুমিনিয়াম", (invoice['aluTotal'] as num?)?.toDouble() ?? 0,
+                          isBold: true, color: cAccent),
+                    ],
+                  )),
+                  const SizedBox(height: 12),
+                ],
+
+                // ── হার্ডওয়্যার ──
+                if (invoice['hwTotal'] != null) ...[
+                  _buildCard(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("🔧 হার্ডওয়্যার",
+                          style: GoogleFonts.hindSiliguri(color: cText, fontSize: 14, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 10),
+                      _buildMoneyRow(
+                          "হার্ডওয়্যার (${totalSft.toStringAsFixed(1)} Sft × ৳${_fmtTk((invoice['hwRate'] as num?)?.toDouble() ?? 25)})",
+                          (invoice['hwTotal'] as num).toDouble()),
+                    ],
+                  )),
+                  const SizedBox(height: 12),
+                ],
+
                 // ── খরচের বিবরণ ──
                 _buildCard(
                   borderColor: cAccent2.withOpacity(0.3),
@@ -160,15 +228,23 @@ class InvoiceDetailScreen extends StatelessWidget {
                       if (invoice['aluTotal'] != null)
                         _buildMoneyRow("🔩 অ্যালুমিনিয়াম বার", (invoice['aluTotal'] as num).toDouble()),
                       if (invoice['glassTotal'] != null)
-                        _buildMoneyRow("🪟 গ্লাস", (invoice['glassTotal'] as num).toDouble()),
+                        _buildMoneyRow(
+                            invoice['glassRate'] != null
+                                ? "🪟 গ্লাস (${totalSft.toStringAsFixed(1)} Sft × ৳${_fmtTk((invoice['glassRate'] as num).toDouble())})"
+                                : "🪟 গ্লাস",
+                            (invoice['glassTotal'] as num).toDouble()),
                       if (invoice['hwTotal'] != null)
                         _buildMoneyRow("🔧 হার্ডওয়্যার", (invoice['hwTotal'] as num).toDouble()),
                       if (invoice['labor'] != null)
-                        _buildMoneyRow("👷 লেবার / ফিটিং", (invoice['labor'] as num).toDouble()),
+                        _buildMoneyRow(
+                            invoice['laborRate'] != null
+                                ? "👷 লেবার (${totalSft.toStringAsFixed(1)} Sft × ৳${_fmtTk((invoice['laborRate'] as num).toDouble())})"
+                                : "👷 লেবার / ফিটিং",
+                            (invoice['labor'] as num).toDouble()),
                       const Divider(color: cBorder, height: 20),
                       _buildMoneyRow("মোট বিল (Grand Total)", (invoice['total'] as num).toDouble(),
                           isBold: true, color: cAccent, size: 16),
-                      if (invoice['advance'] != null)
+                      if (invoice['advance'] != null && (invoice['advance'] as num).toDouble() > 0)
                         _buildMoneyRow("(−) অগ্রিম জমা", (invoice['advance'] as num).toDouble(), color: cYellow),
                       const Divider(color: cAccent2, height: 20, thickness: 1.5),
                       _buildMoneyRow("বাকি (Due)", due, isBold: true, color: cAccent2, size: 18),
@@ -201,6 +277,27 @@ class InvoiceDetailScreen extends StatelessWidget {
       child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
         Text(label, style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 13)),
         Text(value, style: GoogleFonts.hindSiliguri(color: cText, fontSize: 13, fontWeight: FontWeight.w600)),
+      ]),
+    );
+  }
+
+  Widget _buildCutRow(String label, dynamic inch, dynamic pricePerBar) {
+    final inchVal = (inch as num?)?.toDouble() ?? 0;
+    final priceVal = (pricePerBar as num?)?.toInt() ?? 0;
+    final bars = _inchToBars(inchVal);
+    final total = (bars * priceVal).round();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(children: [
+        Expanded(flex: 3, child: Text(label, style: GoogleFonts.hindSiliguri(color: cText, fontSize: 12))),
+        SizedBox(width: 50, child: Text("${inchVal.toStringAsFixed(0)}\"",
+            style: GoogleFonts.inter(color: cMuted, fontSize: 11), textAlign: TextAlign.right)),
+        SizedBox(width: 50, child: Text("${bars.toStringAsFixed(1)}P",
+            style: GoogleFonts.inter(color: cAccent2, fontSize: 11, fontWeight: FontWeight.bold), textAlign: TextAlign.center)),
+        SizedBox(width: 40, child: Text("৳$priceVal",
+            style: GoogleFonts.inter(color: cMuted, fontSize: 11), textAlign: TextAlign.right)),
+        SizedBox(width: 55, child: Text("৳$total",
+            style: GoogleFonts.inter(color: cGreen, fontSize: 12, fontWeight: FontWeight.bold), textAlign: TextAlign.right)),
       ]),
     );
   }

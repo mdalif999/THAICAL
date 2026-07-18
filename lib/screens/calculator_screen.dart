@@ -40,7 +40,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   // Cascading dropdown values
   String? _selectedBrandName;
   String? _selectedColorName;
-  double? _selectedThickness;
+  String? _selectedProfileSize;
 
   bool _isLoadingBrands = true;
 
@@ -59,6 +59,8 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   final _ilController = TextEditingController();
   final _stController = TextEditingController();
   final _sbController = TextEditingController();
+  final _nsController = TextEditingController();
+  final _nhController = TextEditingController();
 
   int _dlCount = 0;
   int _swCount = 0;
@@ -67,6 +69,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   final _hwRateController = TextEditingController(text: "25");
 
   final _laborController = TextEditingController(text: "0");
+  final _laborRateController = TextEditingController(text: "25");
   final _advanceController = TextEditingController(text: "0");
 
   final _customerNameController = TextEditingController();
@@ -92,7 +95,10 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     _ilController.dispose();
     _stController.dispose();
     _sbController.dispose();
+    _nsController.dispose();
+    _nhController.dispose();
     _laborController.dispose();
+    _laborRateController.dispose();
     _advanceController.dispose();
     _hwRateController.dispose();
     _customerNameController.dispose();
@@ -140,37 +146,50 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     
     setState(() {
       _selectedColorName = colors.isNotEmpty ? colors.first : null;
-      _updateThicknessesForColor();
+      _updateProfileSizesForColor();
     });
   }
 
-  void _updateThicknessesForColor() {
+  void _updateProfileSizesForColor() {
     if (_selectedBrandName == null || _selectedColorName == null || _thaiColorSets.isEmpty) return;
     
-    final thicknesses = _thaiColorSets
+    final sizes = _thaiColorSets
         .where((e) => e.brand == _selectedBrandName && e.color == _selectedColorName)
-        .map((e) => e.thick)
+        .map((e) => e.profileSize)
         .toSet()
         .toList();
         
     setState(() {
-      _selectedThickness = thicknesses.isNotEmpty ? thicknesses.first : null;
+      _selectedProfileSize = sizes.isNotEmpty ? sizes.first : null;
       _updateSelectedThaiColorSet();
     });
   }
 
   void _updateSelectedThaiColorSet() {
-    try {
-      _selectedThaiColorSet = _thaiColorSets.firstWhere((e) =>
-          e.brand == _selectedBrandName &&
-          e.color == _selectedColorName &&
-          e.thick == _selectedThickness);
-    } catch (_) {
-      if (_thaiColorSets.isNotEmpty) {
-        _selectedThaiColorSet = _thaiColorSets.first;
-      }
+  try {
+    _selectedThaiColorSet = _thaiColorSets.firstWhere((e) =>
+        e.brand == _selectedBrandName &&
+        e.color == _selectedColorName &&
+        e.profileSize == _selectedProfileSize);
+  } catch (_) {
+    if (_thaiColorSets.isNotEmpty) {
+      _selectedThaiColorSet = _thaiColorSets.first;
     }
   }
+  _refreshNsNhIfNeeded();
+ } 
+
+// ৪" প্রোফাইলে পাল্টালে N/S, N/H ফাঁকা/০ থাকলে windowsList থেকে recalculate করে বসিয়ে দেয়
+  void _refreshNsNhIfNeeded() {
+  if (_selectedThaiColorSet == null) return;
+  if (_selectedThaiColorSet!.profileSize.contains('4') && _windowsList.isNotEmpty) {
+    if (_nsController.text.trim().isEmpty && _nhController.text.trim().isEmpty) {
+      final cuts = _getCalculation().calcCutInches();
+      _nsController.text = (cuts['ns'] ?? 0).toStringAsFixed(1);
+      _nhController.text = (cuts['nh'] ?? 0).toStringAsFixed(1);
+    }
+  }
+}
 
   WindowCalculation _getCalculation() {
     return WindowCalculation(
@@ -192,6 +211,8 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       overrideIl: double.tryParse(_ilController.text),
       overrideSt: double.tryParse(_stController.text),
       overrideSb: double.tryParse(_sbController.text),
+      overrideNs: double.tryParse(_nsController.text),
+      overrideNh: double.tryParse(_nhController.text),
     );
   }
 
@@ -235,37 +256,64 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   }
 
   void _nextStep() {
-    if (_currentStep == 1) {
-      if (_windowsList.isEmpty) {
-        _showSnackBar("অন্তত ১টি জানালা যোগ করুন!", cRed);
-        return;
-      }
-      final cuts = _getCalculation().calcCutInches();
-      setState(() {
-        _osController.text = cuts['os']!.toStringAsFixed(1);
-        _otController.text = cuts['ot']!.toStringAsFixed(1);
-        _ohbController.text = cuts['ohb']!.toStringAsFixed(1);
-        _slController.text = cuts['sl']!.toStringAsFixed(1);
-        _ilController.text = cuts['il']!.toStringAsFixed(1);
-        _stController.text = cuts['st']!.toStringAsFixed(1);
-        _sbController.text = cuts['sb']!.toStringAsFixed(1);
-        
-        int totalQty = 0;
-        for (var w in _windowsList) {
-          totalQty += (w['qty'] as num).toInt();
-        }
-        _dlCount = totalQty * 2;
-        _swCount = totalQty * 2;
-        _scCount = (totalQty / 2).ceil();
-        _snCount = (totalQty / 4).ceil();
-        _currentStep = 2;
-      });
-    } else if (_currentStep == 2) {
-      setState(() => _currentStep = 3);
-    } else if (_currentStep == 3) {
-      setState(() => _currentStep = 4);
+  if (_currentStep == 1) {
+    if (_windowsList.isEmpty) {
+      _showSnackBar("অন্তত ১টি জানালা যোগ করুন!", cRed);
+      return;
     }
+    // Purono override values clear koro — notun kore calculate hobe
+    _osController.clear();
+    _otController.clear();
+    _ohbController.clear();
+    _slController.clear();
+    _ilController.clear();
+    _stController.clear();
+    _sbController.clear();
+    _nsController.clear();
+    _nhController.clear();
+
+    final cuts = _getCalculation().calcCutInches();
+    setState(() {
+      _osController.text = cuts['os']!.toStringAsFixed(1);
+      _otController.text = cuts['ot']!.toStringAsFixed(1);
+      _ohbController.text = cuts['ohb']!.toStringAsFixed(1);
+      _slController.text = cuts['sl']!.toStringAsFixed(1);
+      _ilController.text = cuts['il']!.toStringAsFixed(1);
+      _stController.text = cuts['st']!.toStringAsFixed(1);
+      _sbController.text = cuts['sb']!.toStringAsFixed(1);
+
+      // ৪" হলে তবেই N/S, N/H বসাও — নাহলে খালি রাখো
+      if (_selectedThaiColorSet?.profileSize.contains('4') == true) {
+        _nsController.text = cuts['ns']!.toStringAsFixed(1);
+        _nhController.text = cuts['nh']!.toStringAsFixed(1);
+      } else {
+        _nsController.clear();
+        _nhController.clear();
+      }
+
+      int totalQty = 0;
+      for (var w in _windowsList) {
+        totalQty += (w['qty'] as num).toInt();
+      }
+      _dlCount = totalQty * 2;
+      _swCount = totalQty * 2;
+      _scCount = (totalQty / 2).ceil();
+      _snCount = (totalQty / 4).ceil();
+
+      // Labor auto-calculate: 3 inch = 25 Tk/sqft, 4 inch = 30 Tk/sqft
+      double totalSft = _calcTotalSft();
+      double laborRate = (_selectedThaiColorSet?.profileSize.contains('4') == true) ? 30 : 25;
+      _laborRateController.text = laborRate.toStringAsFixed(0);
+      _laborController.text = (totalSft * laborRate).toStringAsFixed(0);
+
+      _currentStep = 2;
+    });
+  } else if (_currentStep == 2) {
+    setState(() => _currentStep = 3);
+  } else if (_currentStep == 3) {
+    setState(() => _currentStep = 4);
   }
+}
 
   void _backStep() {
     if (_currentStep > 1) setState(() => _currentStep--);
@@ -287,7 +335,10 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       _ilController.clear();
       _stController.clear();
       _sbController.clear();
+      _nsController.clear();
+      _nhController.clear();
       _laborController.text = "0";
+      _laborRateController.text = "25";
       _advanceController.text = "0";
       _customerNameController.clear();
       _customerPhoneController.clear();
@@ -372,8 +423,12 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         'phone': _customerPhoneController.text.trim(),
         'brand': _selectedThaiColorSet?.brand ?? 'Thai',
         'color': _selectedThaiColorSet?.color ?? '',
-        'thickness': _selectedThaiColorSet?.thick ?? 0,
+        'thickness': (_selectedThaiColorSet?.profileSize.contains('4') == true) ? 4.0 : 3.0,
+        'profile_size': _selectedThaiColorSet?.profileSize ?? '3"',
         'glassBrand': _selectedGlassBrand?.brandName ?? '',
+        'glassRate': _selectedGlassBrand?.pricePerSft ?? 0,
+        'hwRate': double.tryParse(_hwRateController.text) ?? 25,
+        'laborRate': double.tryParse(_laborRateController.text) ?? 0,
         'total': calc.calcGrandTotal(),
         'due': calc.calcDue(),
         'date': DateTime.now().toIso8601String(),
@@ -388,6 +443,28 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         'swCount': _swCount,
         'scCount': _scCount,
         'snCount': _snCount,
+        'cuts': {
+          'os': double.tryParse(_osController.text) ?? 0,
+          'ot': double.tryParse(_otController.text) ?? 0,
+          'ohb': double.tryParse(_ohbController.text) ?? 0,
+          'sl': double.tryParse(_slController.text) ?? 0,
+          'il': double.tryParse(_ilController.text) ?? 0,
+          'st': double.tryParse(_stController.text) ?? 0,
+          'sb': double.tryParse(_sbController.text) ?? 0,
+          'ns': double.tryParse(_nsController.text) ?? 0,
+          'nh': double.tryParse(_nhController.text) ?? 0,
+        },
+        'cutPrices': {
+          'os': _selectedThaiColorSet?.priceOs ?? 0,
+          'ot': _selectedThaiColorSet?.priceOt ?? 0,
+          'ohb': _selectedThaiColorSet?.priceOhb ?? 0,
+          'sl': _selectedThaiColorSet?.priceSl ?? 0,
+          'il': _selectedThaiColorSet?.priceIl ?? 0,
+          'st': _selectedThaiColorSet?.priceSt ?? 0,
+          'sb': _selectedThaiColorSet?.priceSb ?? 0,
+          'ns': _selectedThaiColorSet?.priceNs ?? 0,
+          'nb': _selectedThaiColorSet?.priceNb ?? 0,
+        },
       };
       
       await DatabaseService.instance.saveInvoice(invoice);
@@ -552,10 +629,10 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         .map((e) => e.color)
         .toSet()
         .toList();
-    // Thickness list matching selected brand and color
-    final thicknessList = _thaiColorSets
+    // Profile size list matching selected brand and color
+    final profileSizeList = _thaiColorSets
         .where((e) => e.brand == _selectedBrandName && e.color == _selectedColorName)
-        .map((e) => e.thick)
+        .map((e) => e.profileSize)
         .toSet()
         .toList();
 
@@ -618,18 +695,18 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
             onChanged: (v) {
               setState(() {
                 _selectedColorName = v;
-                _updateThicknessesForColor();
+                _updateProfileSizesForColor();
               });
             },
           ),
           const SizedBox(height: 12),
-          // Cascading Thickness Dropdown
-          DropdownButtonFormField<double>(
-            value: _selectedThickness,
+          // Cascading Profile Size Dropdown
+          DropdownButtonFormField<String>(
+            value: _selectedProfileSize,
             dropdownColor: cCard,
-            style: GoogleFonts.inter(color: cText, fontSize: 14),
+            style: GoogleFonts.hindSiliguri(color: cText, fontSize: 14),
             decoration: InputDecoration(
-              labelText: "পুরুত্ব (Thickness mm) সিলেক্ট করুন",
+              labelText: "জানালার ধরন সিলেক্ট করুন",
               labelStyle: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 13),
               filled: true, fillColor: const Color(0xFF12151F),
               enabledBorder: OutlineInputBorder(
@@ -639,11 +716,14 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                   borderRadius: BorderRadius.circular(8),
                   borderSide: const BorderSide(color: cAccent)),
             ),
-            items: thicknessList.map((v) =>
-                DropdownMenuItem<double>(value: v, child: Text("${v.toStringAsFixed(1)} mm"))).toList(),
+            items: profileSizeList.map((v) =>
+                DropdownMenuItem<String>(
+                  value: v, 
+                  child: Text(v.contains('4') ? '৪" (নেট সহ)' : '৩" (নেট ছাড়া)'),
+                )).toList(),
             onChanged: (v) {
               setState(() {
-                _selectedThickness = v;
+                _selectedProfileSize = v;
                 _updateSelectedThaiColorSet();
               });
             },
@@ -678,9 +758,9 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         _buildTextInput(controller: _winNameController, label: "জানালার নাম / লোকেশন"),
         const SizedBox(height: 12),
         Row(children: [
-          Expanded(child: _buildTextInput(controller: _winWidthController, label: "প্রস্থ (W) ইঞ্চি", isNumber: true)),
+          Expanded(child: _buildTextInput(controller: _winWidthController, label: "উচ্চতা (H) ইঞ্চি", isNumber: true)),
           const SizedBox(width: 8),
-          Expanded(child: _buildTextInput(controller: _winHeightController, label: "উচ্চতা (H) ইঞ্চি", isNumber: true)),
+          Expanded(child: _buildTextInput(controller: _winHeightController, label: "প্রস্থ (W) ইঞ্চি", isNumber: true)),
           const SizedBox(width: 8),
           Expanded(child: _buildTextInput(controller: _winQtyController, label: "পরিমাণ (Qty)", isNumber: true)),
         ]),
@@ -791,8 +871,19 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         Row(children: [
           Expanded(child: _buildTextInput(controller: _sbController, label: "S/B পাল্লা বটম মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
           const SizedBox(width: 8),
-          const Expanded(child: SizedBox()),
+          if (_selectedThaiColorSet?.profileSize.contains('4') == true)
+            Expanded(child: _buildTextInput(controller: _nsController, label: "N/S নেট সেকশন মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {})))
+          else
+            const Expanded(child: SizedBox()),
         ]),
+        if (_selectedThaiColorSet?.profileSize.contains('4') == true) ...[
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(child: _buildTextInput(controller: _nhController, label: "N/H নেট হ্যান্ডেল মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
+            const SizedBox(width: 8),
+            const Expanded(child: SizedBox()),
+          ]),
+        ],
       ])),
       const SizedBox(height: 14),
       _buildCard(
@@ -811,64 +902,75 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   }
 
   Widget _buildAluBreakdownTable() {
-    if (_selectedThaiColorSet == null) {
-      return Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Text("সেটআপ সম্পন্ন হয়নি", style: GoogleFonts.hindSiliguri(color: cMuted)),
-      );
-    }
-    double osI = double.tryParse(_osController.text) ?? 0;
-    double otI = double.tryParse(_otController.text) ?? 0;
-    double ohbI = double.tryParse(_ohbController.text) ?? 0;
-    double slI = double.tryParse(_slController.text) ?? 0;
-    double ilI = double.tryParse(_ilController.text) ?? 0;
-    double stI = double.tryParse(_stController.text) ?? 0;
-    double sbI = double.tryParse(_sbController.text) ?? 0;
-
-    final rows = [
-      {"name": "O/S আউটার খাড়া", "inch": osI, "price": _selectedThaiColorSet!.priceOs},
-      {"name": "O/T আউটার টপ", "inch": otI, "price": _selectedThaiColorSet!.priceOt},
-      {"name": "O/B আউটার বটম", "inch": ohbI, "price": _selectedThaiColorSet!.priceOhb},
-      {"name": "S/L পাল্লা লক খাড়া", "inch": slI, "price": _selectedThaiColorSet!.priceSl},
-      {"name": "I/L পাল্লা ইন্টারলক", "inch": ilI, "price": _selectedThaiColorSet!.priceIl},
-      {"name": "S/T পাল্লা টপ চওড়া", "inch": stI, "price": _selectedThaiColorSet!.priceSt},
-      {"name": "S/B পাল্লা বটম চওড়া", "inch": sbI, "price": _selectedThaiColorSet!.priceSb},
-    ];
-    return Column(children: [
-      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Expanded(child: Text("সেকশন", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11))),
-        SizedBox(width: 60, child: Text("ইঞ্চি", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.right)),
-        SizedBox(width: 50, child: Text("বার", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.center)),
-        SizedBox(width: 80, child: Text("দাম (Tk)", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.right)),
-      ]),
-      const SizedBox(height: 6),
-      const Divider(color: cBorder, height: 1),
-      const SizedBox(height: 8),
-      for (var row in rows)
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Row(children: [
-            Expanded(child: Text(row['name'] as String,
-                style: GoogleFonts.hindSiliguri(color: cText, fontSize: 13))),
-            SizedBox(width: 60,
-                child: Text("${(row['inch'] as double).toStringAsFixed(0)}\"",
-                    style: GoogleFonts.inter(color: cMuted, fontSize: 13),
-                    textAlign: TextAlign.right)),
-            Container(width: 50, alignment: Alignment.center,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(color: cAccent2, borderRadius: BorderRadius.circular(4)),
-                  child: Text(_formatBar(_inchToBars(row['inch'] as double)),
-                      style: GoogleFonts.inter(color: cBg, fontSize: 11, fontWeight: FontWeight.bold)),
-                )),
-            SizedBox(width: 80,
-                child: Text("${(_inchToBars(row['inch'] as double) * (row['price'] as int)).round()}",
-                    style: GoogleFonts.inter(color: cGreen, fontSize: 13, fontWeight: FontWeight.bold),
-                    textAlign: TextAlign.right)),
-          ]),
-        ),
-    ]);
+  if (_selectedThaiColorSet == null) {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Text("সেটআপ সম্পন্ন হয়নি", style: GoogleFonts.hindSiliguri(color: cMuted)),
+    );
   }
+  double osI = double.tryParse(_osController.text) ?? 0;
+  double otI = double.tryParse(_otController.text) ?? 0;
+  double ohbI = double.tryParse(_ohbController.text) ?? 0;
+  double slI = double.tryParse(_slController.text) ?? 0;
+  double ilI = double.tryParse(_ilController.text) ?? 0;
+  double stI = double.tryParse(_stController.text) ?? 0;
+  double sbI = double.tryParse(_sbController.text) ?? 0;
+
+  final rows = [
+    {"name": "O/S আউটার খাড়া", "inch": osI, "price": _selectedThaiColorSet!.priceOs},
+    {"name": "O/T আউটার টপ", "inch": otI, "price": _selectedThaiColorSet!.priceOt},
+    {"name": "O/B আউটার বটম", "inch": ohbI, "price": _selectedThaiColorSet!.priceOhb},
+    {"name": "S/L পাল্লা লক খাড়া", "inch": slI, "price": _selectedThaiColorSet!.priceSl},
+    {"name": "I/L পাল্লা ইন্টারলক", "inch": ilI, "price": _selectedThaiColorSet!.priceIl},
+    {"name": "S/T পাল্লা টপ চওড়া", "inch": stI, "price": _selectedThaiColorSet!.priceSt},
+    {"name": "S/B পাল্লা বটম চওড়া", "inch": sbI, "price": _selectedThaiColorSet!.priceSb},
+  ];
+  if (_selectedThaiColorSet!.profileSize.contains('4')) {
+    double nsI = double.tryParse(_nsController.text) ?? 0;
+    double nhI = double.tryParse(_nhController.text) ?? 0;
+    rows.add({"name": "N/S নেট সেকশন", "inch": nsI, "price": _selectedThaiColorSet!.priceNs ?? 0});
+    rows.add({"name": "N/H - নেট হ্যান্ডেল", "inch": nhI, "price": _selectedThaiColorSet!.priceNb ?? 0});
+  }
+  return Column(children: [
+    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+      Expanded(flex: 3, child: Text("সেকশন", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11))),
+      SizedBox(width: 42, child: Text("ইঞ্চি", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.right)),
+      SizedBox(width: 40, child: Text("বার", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.center)),
+      SizedBox(width: 55, child: Text("দর/বার", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.right)),
+      SizedBox(width: 65, child: Text("দাম (Tk)", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.right)),
+    ]),
+    const SizedBox(height: 6),
+    const Divider(color: cBorder, height: 1),
+    const SizedBox(height: 8),
+    for (var row in rows)
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(children: [
+          Expanded(flex: 3, child: Text(row['name'] as String,
+              style: GoogleFonts.hindSiliguri(color: cText, fontSize: 13))),
+          SizedBox(width: 42,
+              child: Text("${(row['inch'] as double).toStringAsFixed(0)}\"",
+                  style: GoogleFonts.inter(color: cMuted, fontSize: 12),
+                  textAlign: TextAlign.right)),
+          Container(width: 40, alignment: Alignment.center,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                decoration: BoxDecoration(color: cAccent2, borderRadius: BorderRadius.circular(4)),
+                child: Text(_formatBar(_inchToBars(row['inch'] as double)),
+                    style: GoogleFonts.inter(color: cBg, fontSize: 10, fontWeight: FontWeight.bold)),
+              )),
+          SizedBox(width: 55,
+              child: Text("${row['price']}",
+                  style: GoogleFonts.inter(color: cMuted, fontSize: 12),
+                  textAlign: TextAlign.right)),
+          SizedBox(width: 65,
+              child: Text("${(_inchToBars(row['inch'] as double) * (row['price'] as int)).round()}",
+                  style: GoogleFonts.inter(color: cGreen, fontSize: 13, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.right)),
+        ]),
+      ),
+  ]);
+}
 
   Widget _buildStep3() {
     return _buildCard(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -946,12 +1048,36 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       _buildCard(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         _buildHeading("💰 লেবার ও অগ্রিম"),
         const SizedBox(height: 12),
-        _buildTextInput(
-          controller: _laborController,
-          label: "লেবার / ফিটিং চার্জ (Tk)",
-          isNumber: true,
-          onChanged: (v) => setState(() {}),
-        ),
+        Row(children: [
+          Expanded(child: _buildTextInput(
+            controller: _laborRateController,
+            label: "দর / Sft (Tk)",
+            isNumber: true,
+            onChanged: (v) {
+              double rate = double.tryParse(v) ?? 0;
+              double totalSft = _calcTotalSft();
+              setState(() {
+                _laborController.text = (totalSft * rate).toStringAsFixed(0);
+              });
+            },
+          )),
+          const SizedBox(width: 8),
+          Expanded(child: _buildTextInput(
+            controller: _laborController,
+            label: "মোট লেবার (Tk)",
+            isNumber: true,
+            onChanged: (v) {
+              double total = double.tryParse(v) ?? 0;
+              double totalSft = _calcTotalSft();
+              if (totalSft > 0) {
+                _laborRateController.text = (total / totalSft).toStringAsFixed(1);
+              }
+            },
+          )),
+        ]),
+        const SizedBox(height: 6),
+        Text("মোট এলাকা: ${_calcTotalSft().toStringAsFixed(2)} Sft",
+            style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11)),
         const SizedBox(height: 10),
         _buildTextInput(
           controller: _advanceController,
@@ -987,11 +1113,11 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                   .toList(),
               onChanged: (v) => setState(() {
                 _selectedColorName = v;
-                _updateThicknessesForColor();
+                _updateProfileSizesForColor();
               }),
             )),
             const SizedBox(width: 6),
-            Expanded(child: _buildCompactThicknessDropdown()),
+            Expanded(child: _buildCompactProfileSizeDropdown()),
           ]),
           const SizedBox(height: 14),
           _buildInvoiceRow("🔩 অ্যালুমিনিয়াম বার", aluTotal.toDouble()),
@@ -1074,19 +1200,19 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     );
   }
 
-  Widget _buildCompactThicknessDropdown() {
-    final thicknessList = _thaiColorSets
+  Widget _buildCompactProfileSizeDropdown() {
+    final profileSizeList = _thaiColorSets
         .where((e) => e.brand == _selectedBrandName && e.color == _selectedColorName)
-        .map((e) => e.thick)
+        .map((e) => e.profileSize)
         .toSet()
         .toList();
-    return DropdownButtonFormField<double>(
-      value: _selectedThickness,
+    return DropdownButtonFormField<String>(
+      value: _selectedProfileSize,
       isExpanded: true,
       dropdownColor: cCard,
-      style: GoogleFonts.inter(color: cText, fontSize: 11),
+      style: GoogleFonts.hindSiliguri(color: cText, fontSize: 11),
       decoration: InputDecoration(
-        labelText: "পুরুত্ব",
+        labelText: "জানালার ধরন",
         labelStyle: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 9),
         filled: true, fillColor: const Color(0xFF12151F),
         contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -1097,12 +1223,22 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
             borderRadius: BorderRadius.circular(6),
             borderSide: const BorderSide(color: cAccent2)),
       ),
-      items: thicknessList.map((v) =>
-          DropdownMenuItem(value: v, child: Text("${v.toStringAsFixed(1)}mm"))).toList(),
-      onChanged: (v) => setState(() {
-        _selectedThickness = v;
-        _updateSelectedThaiColorSet();
-      }),
+      items: profileSizeList.map((v) =>
+          DropdownMenuItem(
+            value: v, 
+            child: Text(v.contains('4') ? '৪" (নেট সহ)' : '৩" (নেট ছাড়া)', style: const TextStyle(fontSize: 10)),
+          )).toList(),
+      onChanged: (v) {
+        setState(() {
+          _selectedProfileSize = v;
+          _updateSelectedThaiColorSet();
+        });
+        // Profile size change hole labor rate auto update
+        double totalSft = _calcTotalSft();
+        double newRate = (v != null && v.contains('4')) ? 30 : 25;
+        _laborRateController.text = newRate.toStringAsFixed(0);
+        _laborController.text = (totalSft * newRate).toStringAsFixed(0);
+      },
     );
   }
 
