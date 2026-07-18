@@ -93,20 +93,15 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
 
   Future<void> _submitLogin() async {
     if (!_loginFormKey.currentState!.validate()) return;
-    
+
     setState(() => _isLoading = true);
     try {
       final profile = await DatabaseService.instance.login(
         _phoneEmailController.text,
         _passwordController.text,
       );
-      
+
       if (profile != null) {
-        // Login successful — check for update before going to home
-        final updateInfo = await DatabaseService.instance.checkForUpdate();
-        if (updateInfo != null && mounted) {
-          await showUpdateDialog(context, updateInfo);
-        }
         if (mounted) Navigator.pushReplacementNamed(context, '/home');
       } else {
         _showError("লগইন ব্যর্থ হয়েছে! অনুগ্রহ করে আবার চেষ্টা করুন।");

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/database_service.dart';
 
 // ✅ FIX: StatelessWidget → StatefulWidget
@@ -16,6 +17,7 @@ class _DeactivatedScreenState extends State<DeactivatedScreen> {
   static const Color cBg = Color(0xFF0F1117);
   static const Color cCard = Color(0xFF1A1D27);
   static const Color cBorder = Color(0xFF2A2D3A);
+  static const Color cAccent = Color(0xFF00D4AA);
   static const Color cAccent2 = Color(0xFFFF6B35);
   static const Color cText = Color(0xFFE8EAF0);
   static const Color cMuted = Color(0xFF6B7280);
@@ -168,15 +170,46 @@ class _DeactivatedScreenState extends State<DeactivatedScreen> {
                             const SizedBox(height: 24),
                             const Divider(color: cBorder),
                             const SizedBox(height: 24),
-                            Text(
-                              "সহায়তার জন্য অ্যাডমিনের সাথে যোগাযোগ করুন।",
-                              style: GoogleFonts.hindSiliguri(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                                color: cText.withOpacity(0.9),
-                                height: 1.5,
-                              ),
-                              textAlign: TextAlign.center,
+                            ListTile(
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              tileColor: const Color(0xFF12151F),
+                              leading: const Icon(Icons.chat_rounded, color: Color(0xFF25D366)),
+                              title: Text("WhatsApp-এ যোগাযোগ", style: GoogleFonts.hindSiliguri(color: cText, fontSize: 13)),
+                              subtitle: Text("01710460274", style: GoogleFonts.inter(color: cMuted, fontSize: 11)),
+                              onTap: () async {
+                                final uri = Uri.parse("https://wa.me/8801710460274");
+                                if (await canLaunchUrl(uri)) {
+                                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                }
+                              },
+                            ),
+                            const SizedBox(height: 8),
+                            ListTile(
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              tileColor: const Color(0xFF12151F),
+                              leading: const Icon(Icons.call_rounded, color: cAccent),
+                              title: Text("কল করুন (১)", style: GoogleFonts.hindSiliguri(color: cText, fontSize: 13)),
+                              subtitle: Text("01305232039", style: GoogleFonts.inter(color: cMuted, fontSize: 11)),
+                              onTap: () async {
+                                final uri = Uri.parse("tel:+8801305232039");
+                                if (await canLaunchUrl(uri)) {
+                                  await launchUrl(uri);
+                                }
+                              },
+                            ),
+                            const SizedBox(height: 8),
+                            ListTile(
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              tileColor: const Color(0xFF12151F),
+                              leading: const Icon(Icons.call_rounded, color: cAccent),
+                              title: Text("কল করুন (২)", style: GoogleFonts.hindSiliguri(color: cText, fontSize: 13)),
+                              subtitle: Text("01787203830", style: GoogleFonts.inter(color: cMuted, fontSize: 11)),
+                              onTap: () async {
+                                final uri = Uri.parse("tel:+8801787203830");
+                                if (await canLaunchUrl(uri)) {
+                                  await launchUrl(uri);
+                                }
+                              },
                             ),
                           ],
                         ),

@@ -295,10 +295,15 @@ class DatabaseService {
 
           final deviceId = await _getOrCreateDeviceId();
 
-          // ── Atomic session lock: check + update ek sathe (race condition fix) ──
-          // Supabase RPC function `set_active_session` call korchi
-          // je check + update atomic vabe kore — duita device e same time e login holeo
-          // ekta-i succeed korbe, arki reject hobe.
+          // ── Session Lock: check if another device is already active ──
+          final existingSession = profileData['active_session_id']?.toString();
+          if (existingSession != null && existingSession != deviceId) {
+            print('Session Lock: REJECTED - another device active ($existingSession)');
+            await _client.auth.signOut();
+            throw Exception('device_active_elsewhere');
+          }
+
+          // ── Set active session ──
           final sessionGranted = await _client
               .rpc('set_active_session', params: {
                 'p_user_id': response.user!.id,
@@ -636,18 +641,6 @@ if (userId == null) {
           .maybeSingle();
 
       if (profileData != null) {
-        // অন্য ডিভাইস থেকে লগইন হয়েছে কিনা চেক করা
-        final myDeviceId = await _getOrCreateDeviceId();
-        final serverSessionId = profileData['active_session_id']?.toString();
-        print('Online Check: serverSessionId=$serverSessionId, myDeviceId=$myDeviceId');
-        if (serverSessionId != null && serverSessionId != myDeviceId) {
-          print('Online Check: SESSION_KICKED - another device took over');
-          return {
-            'is_active': false,
-            'reason': 'session_kicked',
-          };
-        }
-
         // Expire হয়ে থাকলে DB তে is_paid সত্যি করে false করে দেওয়া
         await _syncExpiredPaidStatus(profileData);
 
