@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class InvoiceDetailScreen extends StatelessWidget {
   final Map<String, dynamic> invoice;
@@ -41,6 +42,13 @@ class InvoiceDetailScreen extends StatelessWidget {
         elevation: 0,
         title: Text(invoice['name']?.toString() ?? 'হিসাব বিস্তারিত',
             style: GoogleFonts.hindSiliguri(color: cText, fontSize: 18, fontWeight: FontWeight.bold)),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.share_rounded, color: cGreen),
+            tooltip: "WhatsApp এ পাঠান",
+            onPressed: () => _shareWhatsApp(context),
+          ),
+        ],
       ),
       body: Center(
         child: Container(
@@ -257,6 +265,167 @@ class InvoiceDetailScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _shareWhatsApp(BuildContext context) async {
+    final name = invoice['name']?.toString() ?? '';
+    final phone = invoice['phone']?.toString() ?? '';
+    final brand = invoice['brand']?.toString() ?? '';
+    final color = invoice['color']?.toString() ?? '';
+    final glassBrand = invoice['glassBrand']?.toString() ?? '';
+    final profileSize = invoice['profile_size']?.toString() ?? '';
+    final thickness = (invoice['thickness'] as num?)?.toDouble() ?? 0;
+    final totalSft = (invoice['totalSft'] as num?)?.toDouble() ?? 0;
+    final aluTotal = (invoice['aluTotal'] as num?)?.toDouble() ?? 0;
+    final glassTotal = (invoice['glassTotal'] as num?)?.toDouble() ?? 0;
+    final glassRate = (invoice['glassRate'] as num?)?.toDouble() ?? 0;
+    final hwTotal = (invoice['hwTotal'] as num?)?.toDouble() ?? 0;
+    final hwRate = (invoice['hwRate'] as num?)?.toDouble() ?? 25;
+    final labor = (invoice['labor'] as num?)?.toDouble() ?? 0;
+    final laborRate = (invoice['laborRate'] as num?)?.toDouble() ?? 0;
+    final total = (invoice['total'] as num?)?.toDouble() ?? 0;
+    final advance = (invoice['advance'] as num?)?.toDouble() ?? 0;
+    final due = (invoice['due'] as num?)?.toDouble() ?? 0;
+    final windows = (invoice['windows'] as List?) ?? [];
+    final cuts = (invoice['cuts'] as Map?) ?? {};
+    final cutPrices = (invoice['cutPrices'] as Map?) ?? {};
+    final dateStr = (invoice['date']?.toString() ?? '').split('T').first;
+    final is4Inch = profileSize.contains('4');
+
+    // Window list
+    final windowBuffer = StringBuffer();
+    if (windows.isNotEmpty) {
+      windowBuffer.writeln("জানালার তালিকা:");
+      windowBuffer.writeln("--------------------");
+      for (var i = 0; i < windows.length; i++) {
+        final w = windows[i] as Map;
+        final width = (w['w'] as num?)?.toDouble() ?? 0;
+        final height = (w['h'] as num?)?.toDouble() ?? 0;
+        final qty = (w['qty'] as num?)?.toInt() ?? 1;
+        final sft = (width * height / 144.0) * qty;
+        windowBuffer.writeln("  ${i + 1}. ${w['name']} — ${width.toStringAsFixed(0)}\" x ${height.toStringAsFixed(0)}\" x ${qty}টি = ${sft.toStringAsFixed(2)} Sft");
+      }
+      if (totalSft > 0) windowBuffer.writeln("  মোট: ${totalSft.toStringAsFixed(2)} Sft");
+      windowBuffer.writeln();
+    }
+
+    // Profile cut detail
+    final cutBuffer = StringBuffer();
+    if (brand.isNotEmpty) {
+      cutBuffer.writeln("অ্যালুমিনিয়াম প্রোফাইল হিসাব:");
+      cutBuffer.writeln("--------------------");
+      cutBuffer.writeln("ব্র্যান্ড: $brand ($color)");
+      cutBuffer.writeln("সাইজ: $profileSize");
+      cutBuffer.writeln();
+
+      final cutItems = [
+        ['O/S (আউটার খাড়া)', cuts['os'], cutPrices['os']],
+        ['O/T (আউটার টপ)', cuts['ot'], cutPrices['ot']],
+        ['O/B (আউটার বটম)', cuts['ohb'], cutPrices['ohb']],
+        ['S/L (পাল্লা লক)', cuts['sl'], cutPrices['sl']],
+        ['I/L (পাল্লা ইন্টারলক)', cuts['il'], cutPrices['il']],
+        ['S/T (পাল্লা টপ)', cuts['st'], cutPrices['st']],
+        ['S/B (পাল্লা বটম)', cuts['sb'], cutPrices['sb']],
+      ];
+      if (is4Inch) {
+        cutItems.add(['N/S (নেট সেকশন)', cuts['ns'], cutPrices['ns']]);
+        cutItems.add(['N/H (নেট হ্যান্ডেল)', cuts['nh'], cutPrices['nb']]);
+      }
+
+      for (var item in cutItems) {
+        final label = item[0] as String;
+        final inch = (item[1] as num?)?.toDouble() ?? 0;
+        final pricePerBar = (item[2] as num?)?.toInt() ?? 0;
+        final bars = inch / 192.0;
+        final totalCut = (bars * pricePerBar).round();
+        if (inch > 0) {
+          cutBuffer.writeln("  $label");
+          cutBuffer.writeln("    ইঞ্চি: ${inch.toStringAsFixed(0)}\"  |  বার: ${bars.toStringAsFixed(2)}  |  দর/বার: ৳$pricePerBar  |  মোট: ৳${_fmtTk(totalCut.toDouble())}");
+        }
+      }
+      cutBuffer.writeln("  -------------------");
+      cutBuffer.writeln("  অ্যালুমিনিয়াম মোট: ৳${_fmtTk(aluTotal)}");
+      cutBuffer.writeln();
+    }
+
+    // Glass detail
+    final glassBuffer = StringBuffer();
+    if (glassBrand.isNotEmpty) {
+      glassBuffer.writeln("গ্লাস হিসাব:");
+      glassBuffer.writeln("--------------------");
+      glassBuffer.writeln("ব্র্যান্ড: $glassBrand");
+      if (glassRate > 0) glassBuffer.writeln("দর: ৳${_fmtTk(glassRate)} / Sft");
+      if (totalSft > 0) glassBuffer.writeln("মোট এলাকা: ${totalSft.toStringAsFixed(2)} Sft");
+      glassBuffer.writeln("গ্লাস মোট: ৳${_fmtTk(glassTotal)}");
+      glassBuffer.writeln();
+    }
+
+    // Main message
+    final buffer = StringBuffer();
+    buffer.writeln("*Thai Calc Pro - বিল রশিদ*");
+    buffer.writeln("------------------------------------");
+    buffer.writeln();
+    buffer.writeln("কাস্টমার: $name");
+    if (phone.isNotEmpty) buffer.writeln("ফোন: $phone");
+    buffer.writeln("তারিখ: $dateStr");
+    buffer.writeln();
+    buffer.writeln("====================================");
+    buffer.write(windowBuffer);
+    buffer.writeln("====================================");
+    buffer.write(cutBuffer);
+    buffer.writeln("====================================");
+    buffer.write(glassBuffer);
+    if (hwTotal > 0) {
+      buffer.writeln("হার্ডওয়্যার: ৳${_fmtTk(hwTotal)}");
+      buffer.writeln("  (${totalSft.toStringAsFixed(1)} Sft x ৳${_fmtTk(hwRate)})");
+    }
+    if (labor > 0) {
+      buffer.writeln("মজুরি/ফিটিং: ৳${_fmtTk(labor)}");
+      if (laborRate > 0) buffer.writeln("  (${totalSft.toStringAsFixed(1)} Sft x ৳${_fmtTk(laborRate)})");
+    }
+    buffer.writeln();
+    buffer.writeln("====================================");
+    buffer.writeln("*সর্বমোট বিল: ৳${_fmtTk(total)}*");
+    if (advance > 0) buffer.writeln("অগ্রিম জমা: ৳${_fmtTk(advance)}");
+    buffer.writeln("*বাকি (Due): ৳${_fmtTk(due)}*");
+    buffer.writeln("====================================");
+    buffer.writeln();
+    buffer.writeln("Thai Calc Pro ব্যবহার করার জন্য ধন্যবাদ!");
+
+    final message = buffer.toString();
+    final encodedMessage = Uri.encodeComponent(message);
+
+    var cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
+    if (cleanPhone.isNotEmpty) {
+      if (cleanPhone.startsWith('0')) {
+        cleanPhone = '88$cleanPhone';
+      }
+    }
+
+    final url = cleanPhone.isNotEmpty
+        ? "https://wa.me/$cleanPhone?text=$encodedMessage"
+        : "https://wa.me/?text=$encodedMessage";
+
+    try {
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("WhatsApp চালু করা যায়নি!", style: GoogleFonts.hindSiliguri(color: Colors.white)),
+                backgroundColor: cAccent2),
+          );
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("WhatsApp শেয়ার ত্রুটি: $e", style: GoogleFonts.hindSiliguri(color: Colors.white)),
+              backgroundColor: cAccent2),
+        );
+      }
+    }
   }
 
   Widget _buildCard({required Widget child, Color? borderColor}) {

@@ -102,6 +102,11 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       );
       
       if (profile != null) {
+        // Login successful — check for update before going to home
+        final updateInfo = await DatabaseService.instance.checkForUpdate();
+        if (updateInfo != null && mounted) {
+          await showUpdateDialog(context, updateInfo);
+        }
         if (mounted) Navigator.pushReplacementNamed(context, '/home');
       } else {
         _showError("লগইন ব্যর্থ হয়েছে! অনুগ্রহ করে আবার চেষ্টা করুন।");
@@ -136,6 +141,11 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       );
       
       if (profile != null) {
+  // SignUp successful — check for update before going to home
+  final updateInfo = await DatabaseService.instance.checkForUpdate();
+  if (updateInfo != null && mounted) {
+    await showUpdateDialog(context, updateInfo);
+  }
   if (mounted) Navigator.pushReplacementNamed(context, '/home');
 } else {
   _showError("রেজিস্ট্রেশন ব্যর্থ হয়েছে!");

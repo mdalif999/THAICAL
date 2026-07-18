@@ -131,6 +131,15 @@ class DatabaseService {
 
   SupabaseClient get _client => Supabase.instance.client;
 
+  Future<bool> hasInternet() async {
+    try {
+      final result = await Connectivity().checkConnectivity();
+      return !result.contains(ConnectivityResult.none);
+    } catch (e) {
+      return true;
+    }
+  }
+
   Future<bool> _hasInternet() async {
     try {
       final result = await Connectivity().checkConnectivity();
@@ -838,12 +847,23 @@ if (userId == null) {
   // app_config table (Supabase) দেখে বলে দেয় নতুন version আছে কিনা, আর force করতে হবে কিনা।
   // Internet না থাকলে null return করে (silently skip)।
   Future<Map<String, dynamic>?> checkForUpdate() async {
-    if (isFallbackMode) return null;
-    if (!await _hasInternet()) return null;
+    print('UPDATE CHECK: Starting...');
+    print('UPDATE CHECK: isFallbackMode = $isFallbackMode');
+    if (isFallbackMode) {
+      print('UPDATE CHECK: Skipped - fallback mode');
+      return null;
+    }
+    final hasNet = await _hasInternet();
+    print('UPDATE CHECK: hasInternet = $hasNet');
+    if (!hasNet) {
+      print('UPDATE CHECK: Skipped - no internet');
+      return null;
+    }
 
     try {
       final packageInfo = await PackageInfo.fromPlatform();
-      final currentVersion = packageInfo.version; // যেমন "1.0.0"
+      final currentVersion = packageInfo.version;
+      print('UPDATE CHECK: currentVersion = $currentVersion');
 
       final config = await _client
           .from('app_config')
@@ -852,15 +872,22 @@ if (userId == null) {
           .maybeSingle()
           .timeout(const Duration(seconds: 4));
 
-      if (config == null) return null;
+      print('UPDATE CHECK: config from DB = $config');
+
+      if (config == null) {
+        print('UPDATE CHECK: config is NULL - row id=1 not found');
+        return null;
+      }
 
       final latestVersion = config['latest_version']?.toString();
+      print('UPDATE CHECK: latestVersion = $latestVersion');
       if (latestVersion == null) return null;
 
       final updateAvailable = _isNewerVersion(latestVersion, currentVersion);
+      print('UPDATE CHECK: updateAvailable = $updateAvailable ($latestVersion vs $currentVersion)');
       if (!updateAvailable) return null;
 
-      return {
+      final result = {
         'update_available': true,
         'latest_version': latestVersion,
         'current_version': currentVersion,
@@ -868,10 +895,28 @@ if (userId == null) {
         'force_update': config['force_update'] == true,
         'release_notes': config['release_notes']?.toString(),
       };
+      print('UPDATE CHECK: returning update info = $result');
+      return result;
     } catch (e) {
-      print('Update check failed (likely offline or table missing): $e');
+      print('UPDATE CHECK FAILED: $e');
       return null;
     }
+  }
+
+  // ── Periodic Update Check helpers ──
+  static const String _lastUpdateCheckKey = 'last_update_check_timestamp';
+
+  Future<void> saveLastUpdateCheckTime() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_lastUpdateCheckKey, DateTime.now().millisecondsSinceEpoch);
+  }
+
+  Future<bool> shouldCheckForUpdate({int intervalDays = 3}) async {
+    final prefs = await SharedPreferences.getInstance();
+    final lastCheck = prefs.getInt(_lastUpdateCheckKey);
+    if (lastCheck == null) return true;
+    final lastCheckTime = DateTime.fromMillisecondsSinceEpoch(lastCheck);
+    return DateTime.now().difference(lastCheckTime).inDays >= intervalDays;
   }
 
   // Simple semantic version compare: "1.2.0" vs "1.10.0" ইত্যাদি ঠিকভাবে handle করে
@@ -887,6 +932,67 @@ if (userId == null) {
       if (l < c) return false;
     }
     return false;
+  }
+
+  // ── Profile Picture ──
+  static const String _profilePicKey = 'profile_picture_path';
+
+  Future<void> saveProfilePicture(String filePath) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_profilePicKey, filePath);
+  }
+
+  Future<String?> getProfilePicture() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_profilePicKey);
+  }
+
+  Future<void> removeProfilePicture() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_profilePicKey);
+  }
+
+  // ── Message Check (Supabase `messages` table) ──
+  // দিনে একবার check করে, নতুন message থাকলে return করে।
+  static const String _lastMessageCheckKey = 'last_message_check_timestamp';
+  static const String _lastSeenMessageIdKey = 'last_seen_message_id';
+
+  Future<Map<String, dynamic>?> checkForMessage() async {
+    if (isFallbackMode) return null;
+    final hasNet = await hasInternet();
+    if (!hasNet) return null;
+
+    try {
+      final lastSeenId = await _getLastSeenMessageId();
+
+      final message = await _client
+          .from('messages')
+          .select()
+          .gt('id', lastSeenId)
+          .order('id', ascending: false)
+          .limit(1)
+          .maybeSingle()
+          .timeout(const Duration(seconds: 5));
+
+      if (message == null) return null;
+
+      // এই message ইতিমধ্যে দেখা হয়েছে কিনা check
+      if (message['id'] == lastSeenId) return null;
+
+      return message;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Future<void> markMessageAsSeen(int messageId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_lastSeenMessageIdKey, messageId);
+  }
+
+  Future<int> _getLastSeenMessageId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_lastSeenMessageIdKey) ?? 0;
   }
 
   // ── Fallback local mock configurations ──

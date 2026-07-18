@@ -1,8 +1,14 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/database_service.dart';
 import 'invoice_detail_screen.dart';
+import 'price_list_screen.dart';
+import 'update_dialog.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -11,7 +17,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   static const Color cBg = Color(0xFF0F1117);
   static const Color cCard = Color(0xFF1A1D27);
   static const Color cBorder = Color(0xFF2A2D3A);
@@ -23,11 +29,245 @@ class _HomeScreenState extends State<HomeScreen> {
 
   List<Map<String, dynamic>> _invoices = [];
   bool _isLoading = true;
+  bool _normalUpdateBannerShown = false;
+  String? _profilePicPath;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadInvoices();
+    _periodicUpdateCheck();
+    _checkMessages();
+    _loadProfilePic();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _periodicUpdateCheck();
+      _checkMessages();
+    }
+  }
+
+  Future<void> _periodicUpdateCheck() async {
+    if (!mounted) return;
+
+    // শুধু online থাকলেই check করবে
+    final isOnline = await DatabaseService.instance.hasInternet();
+    if (!isOnline) return;
+
+    // ৩ দিন পারেনি হলে check করবে না
+    final shouldCheck = await DatabaseService.instance.shouldCheckForUpdate(intervalDays: 3);
+    if (!shouldCheck) return;
+
+    final updateInfo = await DatabaseService.instance.checkForUpdate();
+    if (updateInfo == null || !mounted) {
+      await DatabaseService.instance.saveLastUpdateCheckTime();
+      return;
+    }
+
+    await DatabaseService.instance.saveLastUpdateCheckTime();
+
+    if (updateInfo['force_update'] == true) {
+      // Force update → বাধ্যতামূলক dialog, বন্ধ করা যাবে না
+      if (mounted) await showUpdateDialog(context, updateInfo);
+    } else {
+      // Normal update → dismissable banner (একবারই দেখাবে)
+      if (mounted && !_normalUpdateBannerShown) {
+        _normalUpdateBannerShown = true;
+        final latestVersion = updateInfo['latest_version']?.toString() ?? '';
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                "নতুন ভার্সন ($latestVersion) পাওয়া গেছে। আপডেট করতে যোগাযোগ করুন।",
+                style: GoogleFonts.hindSiliguri(color: Colors.white, fontSize: 13),
+              ),
+              backgroundColor: cAccent,
+              duration: const Duration(seconds: 5),
+              action: SnackBarAction(
+                label: "বন্ধ করুন",
+                textColor: cBg,
+                onPressed: () {},
+              ),
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  // ── Message Check (Supabase messages table) ──
+  Future<void> _checkMessages() async {
+    if (!mounted) return;
+    final isOnline = await DatabaseService.instance.hasInternet();
+    if (!isOnline) return;
+
+    final message = await DatabaseService.instance.checkForMessage();
+    if (message == null || !mounted) return;
+
+    final title = message['title']?.toString() ?? 'নতুন বার্তা';
+    final body = message['body']?.toString() ?? '';
+    final msgId = message['id'] as int;
+
+    if (mounted) {
+      await DatabaseService.instance.markMessageAsSeen(msgId);
+      _showMessageDialog(title, body);
+    }
+  }
+
+  void _showMessageDialog(String title, String body) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: cCard,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: cBorder),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: cAccent.withOpacity(0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.notifications_active_rounded, size: 32, color: cAccent),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                title,
+                style: GoogleFonts.hindSiliguri(
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                  color: cText,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              if (body.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Text(
+                  body,
+                  style: GoogleFonts.hindSiliguri(fontSize: 13, color: cMuted, height: 1.5),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: cAccent,
+                    foregroundColor: cBg,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  child: Text(
+                    "ঠিক আছে",
+                    style: GoogleFonts.hindSiliguri(fontSize: 14, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text(
+                  "বন্ধ করুন",
+                  style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Profile Picture ──
+  Future<void> _loadProfilePic() async {
+    final path = await DatabaseService.instance.getProfilePicture();
+    if (mounted && path != null) {
+      final file = File(path);
+      if (await file.exists()) {
+        setState(() => _profilePicPath = path);
+      }
+    }
+  }
+
+  Future<void> _pickProfilePic() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
+    if (picked == null) return;
+
+    final appDir = await getApplicationDocumentsDirectory();
+    final fileName = 'profile_pic.jpg';
+    final savedFile = await File(picked.path).copy('${appDir.path}/$fileName');
+
+    await DatabaseService.instance.saveProfilePicture(savedFile.path);
+    if (mounted) setState(() => _profilePicPath = savedFile.path);
+  }
+
+  void _showProfilePicSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: cCard,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(color: cBorder, borderRadius: BorderRadius.circular(2)),
+            ),
+            const SizedBox(height: 16),
+            Text("প্রোফাইল ছবি",
+                style: GoogleFonts.hindSiliguri(color: cText, fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+            ListTile(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              tileColor: const Color(0xFF12151F),
+              leading: const Icon(Icons.photo_library_rounded, color: cAccent),
+              title: Text("গ্যালারি থেকে ছবি বাছুন", style: GoogleFonts.hindSiliguri(color: cText)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickProfilePic();
+              },
+            ),
+            if (_profilePicPath != null) ...[
+              const SizedBox(height: 8),
+              ListTile(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                tileColor: const Color(0xFF12151F),
+                leading: const Icon(Icons.delete_rounded, color: cAccent2),
+                title: Text("ছবি সরিয়ে ফেলুন", style: GoogleFonts.hindSiliguri(color: cAccent2)),
+                onTap: () async {
+                  await DatabaseService.instance.removeProfilePicture();
+                  if (mounted) setState(() => _profilePicPath = null);
+                  if (ctx.mounted) Navigator.pop(ctx);
+                },
+              ),
+            ],
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _loadInvoices() async {
@@ -101,10 +341,16 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  CircleAvatar(
-                    radius: 28,
-                    backgroundColor: cAccent.withOpacity(0.15),
-                    child: const Icon(Icons.person, color: cAccent, size: 30),
+                  GestureDetector(
+                    onTap: _showProfilePicSheet,
+                    child: CircleAvatar(
+                      radius: 28,
+                      backgroundColor: cAccent.withOpacity(0.15),
+                      backgroundImage: _profilePicPath != null ? FileImage(File(_profilePicPath!)) : null,
+                      child: _profilePicPath == null
+                          ? const Icon(Icons.person, color: cAccent, size: 30)
+                          : null,
+                    ),
                   ),
                   const SizedBox(height: 10),
                   Text(name, style: GoogleFonts.hindSiliguri(color: cText, fontSize: 16, fontWeight: FontWeight.bold)),
@@ -157,6 +403,13 @@ class _HomeScreenState extends State<HomeScreen> {
           },
         ),
         const Divider(color: cBorder, height: 1),
+        ListTile(
+          leading: const Icon(Icons.price_change_rounded, color: cMuted),
+          title: Text("প্রাইস লিস্ট", style: GoogleFonts.hindSiliguri(color: cText)),
+          onTap: () {
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const PriceListScreen()));
+          },
+        ),
         ListTile(
           leading: const Icon(Icons.help_outline_rounded, color: cMuted),
           title: Text("সাহায্য / যোগাযোগ", style: GoogleFonts.hindSiliguri(color: cText)),
@@ -248,6 +501,17 @@ class _HomeScreenState extends State<HomeScreen> {
           onTap: () async {
             await DatabaseService.instance.logout();
             if (context.mounted) Navigator.pushReplacementNamed(context, '/');
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.exit_to_app_rounded, color: cMuted),
+          title: Text("অ্যাপ বন্ধ করুন", style: GoogleFonts.hindSiliguri(color: cMuted)),
+          onTap: () {
+            if (Platform.isAndroid) {
+              SystemNavigator.pop();
+            } else {
+              exit(0);
+            }
           },
         ),
         const SizedBox(height: 12),

@@ -365,22 +365,103 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
 
     final formattedDate = DateFormat('dd-MM-yyyy hh:mm a').format(DateTime.now());
 
+    final windows = calc.windowsList;
+    final cuts = calc.calcCutInches();
+    final thaiSet = calc.selectedThaiColorSet;
+    final glassBrand = calc.selectedGlassBrand;
+    final is4Inch = thaiSet?.profileSize.contains('4') == true;
+
+    // Window list
+    final windowBuffer = StringBuffer();
+    if (windows.isNotEmpty) {
+      windowBuffer.writeln("জানালার তালিকা:");
+      windowBuffer.writeln("--------------------");
+      for (var i = 0; i < windows.length; i++) {
+        final w = windows[i];
+        final width = (w['w'] as num?)?.toDouble() ?? 0;
+        final height = (w['h'] as num?)?.toDouble() ?? 0;
+        final qty = (w['qty'] as num?)?.toInt() ?? 1;
+        final sft = (width * height / 144.0) * qty;
+        windowBuffer.writeln("  ${i + 1}. ${w['name']} — ${width.toStringAsFixed(0)}\" x ${height.toStringAsFixed(0)}\" x ${qty}টি = ${sft.toStringAsFixed(2)} Sft");
+      }
+      windowBuffer.writeln("  মোট: ${totalSft.toStringAsFixed(2)} Sft");
+      windowBuffer.writeln();
+    }
+
+    // Profile cut detail
+    final cutBuffer = StringBuffer();
+    if (thaiSet != null) {
+      cutBuffer.writeln("অ্যালুমিনিয়াম প্রোফাইল হিসাব:");
+      cutBuffer.writeln("--------------------");
+      cutBuffer.writeln("ব্র্যান্ড: ${thaiSet.brand} (${thaiSet.color})");
+      cutBuffer.writeln("সাইজ: ${thaiSet.profileSize}");
+      cutBuffer.writeln();
+
+      final cutItems = [
+        ['O/S (আউটার খাড়া)', cuts['os'], thaiSet.priceOs],
+        ['O/T (আউটার টপ)', cuts['ot'], thaiSet.priceOt],
+        ['O/B (আউটার বটম)', cuts['ohb'], thaiSet.priceOhb],
+        ['S/L (পাল্লা লক)', cuts['sl'], thaiSet.priceSl],
+        ['I/L (পাল্লা ইন্টারলক)', cuts['il'], thaiSet.priceIl],
+        ['S/T (পাল্লা টপ)', cuts['st'], thaiSet.priceSt],
+        ['S/B (পাল্লা বটম)', cuts['sb'], thaiSet.priceSb],
+      ];
+      if (is4Inch) {
+        cutItems.add(['N/S (নেট সেকশন)', cuts['ns'], thaiSet.priceNs ?? 0]);
+        cutItems.add(['N/H (নেট হ্যান্ডেল)', cuts['nh'], thaiSet.priceNb ?? 0]);
+      }
+
+      for (var item in cutItems) {
+        final label = item[0] as String;
+        final inch = (item[1] as num?)?.toDouble() ?? 0;
+        final pricePerBar = (item[2] as num?)?.toInt() ?? 0;
+        final bars = inch / 192.0;
+        final total = (bars * pricePerBar).round();
+        if (inch > 0) {
+          cutBuffer.writeln("  $label");
+          cutBuffer.writeln("    ইঞ্চি: ${inch.toStringAsFixed(0)}\"  |  বার: ${bars.toStringAsFixed(2)}  |  দর/বার: ৳$pricePerBar  |  মোট: ৳${_fmtTk(total.toDouble())}");
+        }
+      }
+      cutBuffer.writeln("  -------------------");
+      cutBuffer.writeln("  অ্যালুমিনিয়াম মোট: ৳${_fmtTk(aluTotal.toDouble())}");
+      cutBuffer.writeln();
+    }
+
+    // Glass detail
+    final glassBuffer = StringBuffer();
+    if (glassBrand != null) {
+      glassBuffer.writeln("গ্লাস হিসাব:");
+      glassBuffer.writeln("--------------------");
+      glassBuffer.writeln("ব্র্যান্ড: ${glassBrand.brandName}");
+      glassBuffer.writeln("দর: ৳${_fmtTk(glassBrand.pricePerSft.toDouble())} / Sft");
+      glassBuffer.writeln("মোট এলাকা: ${totalSft.toStringAsFixed(2)} Sft");
+      glassBuffer.writeln("গ্লাস মোট: ৳${_fmtTk(glassTotal)}");
+      glassBuffer.writeln();
+    }
+
     final message = "*Thai Calc Pro - বিল রশিদ*\n"
         "------------------------------------\n"
-        "👤 কাস্টমার: $name\n"
-        "${phone.isNotEmpty ? "📞 ফোন: $phone\n" : ""}"
-        "📅 তারিখ: $formattedDate\n"
-        "------------------------------------\n"
-        "📐 মোট মাপ: ${totalSft.toStringAsFixed(1)} Sft\n"
-        "💵 অ্যালুমিনিয়াম খরচ: ৳ ${_fmtTk(aluTotal.toDouble())}\n"
-        "🥛 গ্লাস খরচ: ৳ ${_fmtTk(glassTotal)}\n"
-        "🔩 হার্ডওয়্যার খরচ: ৳ ${_fmtTk(hwTotal.toDouble())}\n"
-        "🛠️ মজুরি / ফিটিং: ৳ ${_fmtTk(labor)}\n"
-        "------------------------------------\n"
-        "💰 সর্বমোট বিল: ৳ ${_fmtTk(grandTotal)}\n"
-        "💳 অগ্রিম জমা: ৳ ${_fmtTk(advance)}\n"
-        "🔴 বকেয়া / বাকি: ৳ ${_fmtTk(due)}\n"
-        "------------------------------------\n"
+        "\n"
+        "কাস্টমার: $name\n"
+        "${phone.isNotEmpty ? "ফোন: $phone\n" : ""}"
+        "তারিখ: $formattedDate\n"
+        "\n"
+        "====================================\n"
+        "${windowBuffer}"
+        "====================================\n"
+        "${cutBuffer}"
+        "====================================\n"
+        "${glassBuffer}"
+        "হার্ডওয়্যার: ৳${_fmtTk(hwTotal.toDouble())}\n"
+        "  (${totalSft.toStringAsFixed(1)} Sft x ৳${_fmtTk(calc.hwRatePerSft)})\n"
+        "মজুরি/ফিটিং: ৳${_fmtTk(labor)}\n"
+        "\n"
+        "====================================\n"
+        "*সর্বমোট বিল: ৳${_fmtTk(grandTotal)}*\n"
+        "${advance > 0 ? "অগ্রিম জমা: ৳${_fmtTk(advance)}\n" : ""}"
+        "*বাকি (Due): ৳${_fmtTk(due)}*\n"
+        "====================================\n"
+        "\n"
         "Thai Calc Pro ব্যবহার করার জন্য ধন্যবাদ!";
 
     final encodedMessage = Uri.encodeComponent(message);

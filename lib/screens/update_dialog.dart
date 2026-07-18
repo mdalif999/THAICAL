@@ -110,7 +110,7 @@ Future<void> showUpdateDialog(BuildContext context, Map<String, dynamic> updateI
                   TextButton(
                     onPressed: () => Navigator.of(dialogContext).pop(),
                     child: Text(
-                      "পরে করবো",
+                      "বন্ধ করুন",
                       style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 13),
                     ),
                   ),
