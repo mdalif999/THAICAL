@@ -114,8 +114,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
           '/deactivated',
           arguments: 'blocked',
         );
+      } else if (errStr.contains('device_active_elsewhere')) {
+        _showError("আপনার অ্যাকাউন্ট এখন অন্য একটি ডিভাইসে লগইন করা আছে। ঐ ডিভাইস থেকে লগআউট করে আবার চেষ্টা করুন।");
       } else {
-        _showError("লগইন ব্যর্থ হয়েছে: ${errStr.replaceAll('Exception: ', '')}");
+        _showError("লগইন ব্যর্থ হয়েছে: ${errStr.replaceAll('Exception: ', '')}");
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);

@@ -511,7 +511,12 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.logout_rounded, color: cMuted),
-            onPressed: () => Navigator.pushReplacementNamed(context, '/'),
+            onPressed: () async {
+              await DatabaseService.instance.logout();
+              if (mounted) {
+                Navigator.pushReplacementNamed(context, '/');
+              }
+            },
           ),
         ],
       ),

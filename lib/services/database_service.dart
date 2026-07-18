@@ -284,12 +284,27 @@ class DatabaseService {
             throw Exception('deactivated');
           }
 
-          // এই ডিভাইসকে active session হিসেবে সেট করা (আগের ডিভাইস auto logout হয়ে যাবে)
           final deviceId = await _getOrCreateDeviceId();
-          await _client
-              .from('profiles')
-              .update({'active_session_id': deviceId})
-              .eq('id', response.user!.id);
+
+          // ── Atomic session lock: check + update ek sathe (race condition fix) ──
+          // Supabase RPC function `set_active_session` call korchi
+          // je check + update atomic vabe kore — duita device e same time e login holeo
+          // ekta-i succeed korbe, arki reject hobe.
+          final sessionGranted = await _client
+              .rpc('set_active_session', params: {
+                'p_user_id': response.user!.id,
+                'p_device_id': deviceId,
+              });
+
+          print('Session Lock: rpc result=$sessionGranted, myDeviceId=$deviceId');
+
+          if (sessionGranted != true) {
+            print('Session Lock: REJECTED - another device active');
+            await _client.auth.signOut();
+            throw Exception('device_active_elsewhere');
+          }
+
+          print('Session Lock: GRANTED - active_session_id set to $deviceId');
           profileData['active_session_id'] = deviceId;
 
           // Expire হয়ে থাকলে DB তে is_paid সত্যিকারভাবে false করে দেওয়া
@@ -340,6 +355,7 @@ class DatabaseService {
       );
 
       if (authResponse.user != null) {
+        final deviceId = await _getOrCreateDeviceId();
         final profileMap = {
           'id': authResponse.user!.id,
           'name': name,
@@ -351,6 +367,18 @@ class DatabaseService {
         };
 
         await _client.from('profiles').insert(profileMap);
+        // Prothom device ke active session set (RPC diye atomic)
+        try {
+          await _client.rpc('set_active_session', params: {
+            'p_user_id': authResponse.user!.id,
+            'p_device_id': deviceId,
+          });
+          print('SignUp: active_session_id set to $deviceId');
+        } catch (e) {
+          print('SignUp: FAILED to set active_session_id! Error: $e');
+        }
+        profileMap['active_session_id'] = deviceId;
+
         currentUserProfileNotifier.value = profileMap;
         await saveProfileLocally(profileMap);
         startSessionMonitoring();
@@ -431,9 +459,22 @@ class DatabaseService {
 
   Future<void> logout() async {
     stopSessionMonitoring();
+    if (!isFallbackMode) {
+      try {
+        final userId = _client.auth.currentUser?.id;
+        if (userId != null) {
+          await _client.from('profiles').update({
+            'active_session_id': null,
+          }).eq('id', userId);
+          print('Logout: active_session_id cleared for $userId');
+        }
+      } catch (e) {
+        print('Logout: FAILED to clear active_session_id. Error: $e');
+      }
+    }
     currentUserProfileNotifier.value = null;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.clear(); // Clear local cache on logout
+    await prefs.clear();
     if (!isFallbackMode) {
       try {
         await _client.auth.signOut();
@@ -589,7 +630,9 @@ if (userId == null) {
         // অন্য ডিভাইস থেকে লগইন হয়েছে কিনা চেক করা
         final myDeviceId = await _getOrCreateDeviceId();
         final serverSessionId = profileData['active_session_id']?.toString();
+        print('Online Check: serverSessionId=$serverSessionId, myDeviceId=$myDeviceId');
         if (serverSessionId != null && serverSessionId != myDeviceId) {
+          print('Online Check: SESSION_KICKED - another device took over');
           return {
             'is_active': false,
             'reason': 'session_kicked',
