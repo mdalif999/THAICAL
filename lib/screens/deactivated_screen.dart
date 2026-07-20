@@ -178,8 +178,18 @@ class _DeactivatedScreenState extends State<DeactivatedScreen> {
                               subtitle: Text("01710460274", style: GoogleFonts.inter(color: cMuted, fontSize: 11)),
                               onTap: () async {
                                 final uri = Uri.parse("https://wa.me/8801710460274");
-                                if (await canLaunchUrl(uri)) {
+                                try {
                                   await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                } catch (e) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text("WhatsApp খুলতে পারা যায়নি। WhatsApp ইনস্টল আছে কিনা চেক করুন।",
+                                            style: GoogleFonts.hindSiliguri(color: Colors.white, fontSize: 13)),
+                                        backgroundColor: cAccent2,
+                                      ),
+                                    );
+                                  }
                                 }
                               },
                             ),
@@ -192,8 +202,18 @@ class _DeactivatedScreenState extends State<DeactivatedScreen> {
                               subtitle: Text("01305232039", style: GoogleFonts.inter(color: cMuted, fontSize: 11)),
                               onTap: () async {
                                 final uri = Uri.parse("tel:+8801305232039");
-                                if (await canLaunchUrl(uri)) {
+                                try {
                                   await launchUrl(uri);
+                                } catch (e) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text("ফোন ডায়ালার খুলতে পারা যায়নি।",
+                                            style: GoogleFonts.hindSiliguri(color: Colors.white, fontSize: 13)),
+                                        backgroundColor: cAccent2,
+                                      ),
+                                    );
+                                  }
                                 }
                               },
                             ),
@@ -206,8 +226,18 @@ class _DeactivatedScreenState extends State<DeactivatedScreen> {
                               subtitle: Text("01787203830", style: GoogleFonts.inter(color: cMuted, fontSize: 11)),
                               onTap: () async {
                                 final uri = Uri.parse("tel:+8801787203830");
-                                if (await canLaunchUrl(uri)) {
+                                try {
                                   await launchUrl(uri);
+                                } catch (e) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text("ফোন ডায়ালার খুলতে পারা যায়নি।",
+                                            style: GoogleFonts.hindSiliguri(color: Colors.white, fontSize: 13)),
+                                        backgroundColor: cAccent2,
+                                      ),
+                                    );
+                                  }
                                 }
                               },
                             ),

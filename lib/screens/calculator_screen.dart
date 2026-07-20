@@ -130,7 +130,6 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         _isLoadingBrands = false;
       });
     } catch (e) {
-      print("Error loading brands from database: $e");
       setState(() => _isLoadingBrands = false);
     }
   }
@@ -355,6 +354,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     double advance = calc.advance;
     double grandTotal = calc.calcGrandTotal();
     double due = calc.calcDue();
+    final hwItems = calc.calcHardwareBreakdown();
 
     final name = _customerNameController.text.trim();
     if (name.isEmpty) {
@@ -388,6 +388,18 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       windowBuffer.writeln();
     }
 
+    // Hardware breakdown
+    final hwBuffer = StringBuffer();
+    hwBuffer.writeln("হার্ডওয়্যার হিসাব:");
+    hwBuffer.writeln("--------------------");
+    for (var item in hwItems) {
+      final cost = item['cost'] as double;
+      hwBuffer.writeln("  ${item['name']} — ${item['qty']} ${item['unit']} × ৳${_fmtTk((item['rate'] as double))} = ৳${_fmtTk(cost)}");
+    }
+    hwBuffer.writeln("  -------------------");
+    hwBuffer.writeln("  হার্ডওয়্যার মোট: ৳${_fmtTk(hwTotal)}");
+    hwBuffer.writeln();
+
     // Profile cut detail
     final cutBuffer = StringBuffer();
     if (thaiSet != null) {
@@ -398,13 +410,13 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       cutBuffer.writeln();
 
       final cutItems = [
-        ['O/S (আউটার খাড়া)', cuts['os'], thaiSet.priceOs],
+        ['O/S (আউটার সাইড)', cuts['os'], thaiSet.priceOs],
         ['O/T (আউটার টপ)', cuts['ot'], thaiSet.priceOt],
-        ['O/B (আউটার বটম)', cuts['ohb'], thaiSet.priceOhb],
-        ['S/L (পাল্লা লক)', cuts['sl'], thaiSet.priceSl],
-        ['I/L (পাল্লা ইন্টারলক)', cuts['il'], thaiSet.priceIl],
-        ['S/T (পাল্লা টপ)', cuts['st'], thaiSet.priceSt],
-        ['S/B (পাল্লা বটম)', cuts['sb'], thaiSet.priceSb],
+        ['OHB (আউটার হাই বটম)', cuts['ohb'], thaiSet.priceOhb],
+        ['S/L (স্লাইডিং লক)', cuts['sl'], thaiSet.priceSl],
+        ['I/L (ইন্টারলক)', cuts['il'], thaiSet.priceIl],
+        ['S/T (শাটার টপ)', cuts['st'], thaiSet.priceSt],
+        ['S/B (শাটার বটম)', cuts['sb'], thaiSet.priceSb],
       ];
       if (is4Inch) {
         cutItems.add(['N/S (নেট সেকশন)', cuts['ns'], thaiSet.priceNs ?? 0]);
@@ -452,8 +464,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         "${cutBuffer}"
         "====================================\n"
         "${glassBuffer}"
-        "হার্ডওয়্যার: ৳${_fmtTk(hwTotal.toDouble())}\n"
-        "  (${totalSft.toStringAsFixed(1)} Sft x ৳${_fmtTk(calc.hwRatePerSft)})\n"
+        "${hwBuffer}"
         "মজুরি/ফিটিং: ৳${_fmtTk(labor)}\n"
         "\n"
         "====================================\n"
@@ -499,6 +510,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     
     try {
       final calc = _getCalculation();
+      final hwItems = calc.calcHardwareBreakdown();
       final invoice = {
         'name': name,
         'phone': _customerPhoneController.text.trim(),
@@ -508,7 +520,6 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         'profile_size': _selectedThaiColorSet?.profileSize ?? '3"',
         'glassBrand': _selectedGlassBrand?.brandName ?? '',
         'glassRate': _selectedGlassBrand?.pricePerSft ?? 0,
-        'hwRate': double.tryParse(_hwRateController.text) ?? 25,
         'laborRate': double.tryParse(_laborRateController.text) ?? 0,
         'total': calc.calcGrandTotal(),
         'due': calc.calcDue(),
@@ -518,6 +529,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         'aluTotal': calc.calcAluTotal(),
         'glassTotal': calc.calcGlassTotal(),
         'hwTotal': calc.calcHwTotal(),
+        'hwItems': hwItems,
         'labor': calc.labor,
         'advance': calc.advance,
         'dlCount': _dlCount,
@@ -844,9 +856,9 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         _buildTextInput(controller: _winNameController, label: "জানালার নাম / লোকেশন"),
         const SizedBox(height: 12),
         Row(children: [
-          Expanded(child: _buildTextInput(controller: _winWidthController, label: "উচ্চতা (H) ইঞ্চি", isNumber: true)),
+          Expanded(child: _buildTextInput(controller: _winHeightController, label: "উচ্চতা (H) ইঞ্চি", isNumber: true)),
           const SizedBox(width: 8),
-          Expanded(child: _buildTextInput(controller: _winHeightController, label: "প্রস্থ (W) ইঞ্চি", isNumber: true)),
+          Expanded(child: _buildTextInput(controller: _winWidthController, label: "প্রস্থ (W) ইঞ্চি", isNumber: true)),
           const SizedBox(width: 8),
           Expanded(child: _buildTextInput(controller: _winQtyController, label: "পরিমাণ (Qty)", isNumber: true)),
         ]),
@@ -1003,19 +1015,19 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   double sbI = double.tryParse(_sbController.text) ?? 0;
 
   final rows = [
-    {"name": "O/S আউটার খাড়া", "inch": osI, "price": _selectedThaiColorSet!.priceOs},
+    {"name": "O/S আউটার সাইড", "inch": osI, "price": _selectedThaiColorSet!.priceOs},
     {"name": "O/T আউটার টপ", "inch": otI, "price": _selectedThaiColorSet!.priceOt},
-    {"name": "O/B আউটার বটম", "inch": ohbI, "price": _selectedThaiColorSet!.priceOhb},
-    {"name": "S/L পাল্লা লক খাড়া", "inch": slI, "price": _selectedThaiColorSet!.priceSl},
-    {"name": "I/L পাল্লা ইন্টারলক", "inch": ilI, "price": _selectedThaiColorSet!.priceIl},
-    {"name": "S/T পাল্লা টপ চওড়া", "inch": stI, "price": _selectedThaiColorSet!.priceSt},
-    {"name": "S/B পাল্লা বটম চওড়া", "inch": sbI, "price": _selectedThaiColorSet!.priceSb},
+    {"name": "OHB আউটার হাই বটম", "inch": ohbI, "price": _selectedThaiColorSet!.priceOhb},
+    {"name": "S/L স্লাইডিং লক", "inch": slI, "price": _selectedThaiColorSet!.priceSl},
+    {"name": "I/L ইন্টারলক", "inch": ilI, "price": _selectedThaiColorSet!.priceIl},
+    {"name": "S/T শাটার টপ", "inch": stI, "price": _selectedThaiColorSet!.priceSt},
+    {"name": "S/B শাটার বটম", "inch": sbI, "price": _selectedThaiColorSet!.priceSb},
   ];
   if (_selectedThaiColorSet!.profileSize.contains('4')) {
     double nsI = double.tryParse(_nsController.text) ?? 0;
     double nhI = double.tryParse(_nhController.text) ?? 0;
     rows.add({"name": "N/S নেট সেকশন", "inch": nsI, "price": _selectedThaiColorSet!.priceNs ?? 0});
-    rows.add({"name": "N/H - নেট হ্যান্ডেল", "inch": nhI, "price": _selectedThaiColorSet!.priceNb ?? 0});
+    rows.add({"name": "N/H নেট হ্যান্ডেল", "inch": nhI, "price": _selectedThaiColorSet!.priceNb ?? 0});
   }
   return Column(children: [
     Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
@@ -1059,27 +1071,86 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
 }
 
   Widget _buildStep3() {
-    return _buildCard(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      _buildHeading("🛠️ হার্ডওয়্যার"),
-      Text("লক, চাকা, স্ক্রু, রাবার সব মিলিয়ে প্রতি বর্গফুট রেট। প্রয়োজনে বদলান।",
-          style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11, fontStyle: FontStyle.italic)),
-      const SizedBox(height: 16),
-      _buildTextInput(
-        controller: _hwRateController,
-        label: "হার্ডওয়্যার প্রতি বর্গফুট (৳)",
-        isNumber: true,
-        onChanged: (v) => setState(() {}),
+    final calc = _getCalculation();
+    final hwItems = calc.calcHardwareBreakdown();
+    final is4Inch = _selectedThaiColorSet?.profileSize.contains('4') == true;
+
+    // Group items by category
+    final fixed3 = hwItems.where((i) => ['স্লাইডিং লক', 'স্লাইডিং হুইল', 'রয়্যাল প্লাজ'].contains(i['name'])).toList();
+    final scalable3 = hwItems.where((i) => ['স্ক্রু ১.৫"', 'স্ক্রু ০.৫"', 'মুহির', 'রাবার'].contains(i['name'])).toList();
+    final fixed4 = hwItems.where((i) => ['নেট এঙ্গেল', 'নেট হুইল'].contains(i['name'])).toList();
+    final scalable4 = hwItems.where((i) => ['নেট', 'রিপ্পিট'].contains(i['name'])).toList();
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      // ── ৩'' Hardware ──
+      _buildCard(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        _buildHeading("🛠️ ৩'' হার্ডওয়্যার"),
+        const SizedBox(height: 12),
+        _buildHwTableHeader(),
+        const Divider(color: cBorder, height: 1),
+        for (var item in fixed3) _buildHwRow(item),
+        for (var item in scalable3) _buildHwRow(item),
+      ])),
+
+      // ── ৪'' Extra Hardware ──
+      if (is4Inch) ...[
+        const SizedBox(height: 14),
+        _buildCard(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          _buildHeading("🕸️ ৪'' এক্সট্রা (নেট সহ)"),
+          const SizedBox(height: 12),
+          _buildHwTableHeader(),
+          const Divider(color: cBorder, height: 1),
+          for (var item in fixed4) _buildHwRow(item),
+          for (var item in scalable4) _buildHwRow(item),
+        ])),
+      ],
+
+      const SizedBox(height: 14),
+      // ── Total ──
+      _buildCard(
+        borderColor: cYellow.withOpacity(0.3),
+        child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          Text("মোট এলাকা: ${_calcTotalSft().toStringAsFixed(2)} Sft",
+              style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 13)),
+          Text("হার্ডওয়্যার সাবটোটাল: ৳ ${_fmtTk(_calcHwTotal())}",
+              style: GoogleFonts.hindSiliguri(color: cYellow, fontWeight: FontWeight.bold, fontSize: 15)),
+        ]),
       ),
-      const SizedBox(height: 16),
-      const Divider(color: cBorder),
-      const SizedBox(height: 12),
-      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Text("মোট এলাকা: ${_calcTotalSft().toStringAsFixed(2)} Sft",
-            style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 13)),
-        Text("হার্ডওয়্যার সাবটোটাল: ৳ ${_fmtTk(_calcHwTotal())}",
-            style: GoogleFonts.hindSiliguri(color: cYellow, fontWeight: FontWeight.bold, fontSize: 15)),
+    ]);
+  }
+
+  Widget _buildHwTableHeader() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(children: [
+        Expanded(flex: 3, child: Text("আইটেম", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11))),
+        SizedBox(width: 45, child: Text("পরিমাণ", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.center)),
+        SizedBox(width: 35, child: Text("ইউনিট", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.center)),
+        SizedBox(width: 55, child: Text("দর", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.right)),
+        SizedBox(width: 65, child: Text("মোট", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.right)),
       ]),
-    ]));
+    );
+  }
+
+  Widget _buildHwRow(Map<String, dynamic> item) {
+    final cost = (item['cost'] as num?)?.toDouble() ?? 0;
+    final rate = (item['rate'] as num?)?.toDouble() ?? 0;
+    final qty = item['qty'];
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(children: [
+        Expanded(flex: 3, child: Text("${item['name']}",
+            style: GoogleFonts.hindSiliguri(color: cText, fontSize: 12))),
+        SizedBox(width: 45, child: Text("$qty",
+            style: GoogleFonts.inter(color: cText, fontSize: 12), textAlign: TextAlign.center)),
+        SizedBox(width: 35, child: Text("${item['unit']}",
+            style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.center)),
+        SizedBox(width: 55, child: Text("৳${_fmtTk(rate)}",
+            style: GoogleFonts.inter(color: cMuted, fontSize: 11), textAlign: TextAlign.right)),
+        SizedBox(width: 65, child: Text("৳${_fmtTk(cost)}",
+            style: GoogleFonts.inter(color: cGreen, fontSize: 12, fontWeight: FontWeight.bold), textAlign: TextAlign.right)),
+      ]),
+    );
   }
 
   Widget _buildCounterRow(String label, int value, ValueChanged<int> onChange) {

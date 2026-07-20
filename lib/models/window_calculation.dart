@@ -165,9 +165,63 @@ class WindowCalculation {
     return total.round();
   }
 
-  // Calculate total hardware cost — sqft ভিত্তিক rate, override করা যায়
+  // ── নতুন Hardware Calculation: per-window itemized system ──
+  // Base window = 4.5' × 5' = 22.5 sft
+  static const double _baseSft = 22.5;
+
+  /// Returns detailed hardware items list with qty, rate, cost for each window
+  List<Map<String, dynamic>> calcHardwareBreakdown() {
+    final items = <Map<String, dynamic>>[];
+    final is4Inch = selectedThaiColorSet?.profileSize.contains('4') == true;
+
+    for (var w in windowsList) {
+      final width = (w['w'] as num).toDouble();
+      final height = (w['h'] as num).toDouble();
+      final qty = (w['qty'] as num).toInt();
+      final windowSft = width * height / 144.0;
+      final ratio = windowSft / _baseSft;
+
+      // ── ৩'' Fixed items (per window) ──
+      items.add({'name': 'স্লাইডিং লক', 'unit': 'পিস', 'qty': 2 * qty, 'rate': 125.0, 'cost': 250.0 * qty});
+      items.add({'name': 'স্লাইডিং হুইল', 'unit': 'পিস', 'qty': 4 * qty, 'rate': 45.0, 'cost': 180.0 * qty});
+      items.add({'name': 'রয়্যাল প্লাজ', 'unit': 'পিস', 'qty': (50 * ratio).ceil() * qty, 'rate': 0.2, 'cost': 10.0 * ratio * qty});
+
+      // ── ৩'' Scalable items (ratio based) ──
+      final screwQty15 = (30 * ratio).ceil();
+      items.add({'name': 'স্ক্রু ১.৫"', 'unit': 'পিস', 'qty': screwQty15 * qty, 'rate': 1.5, 'cost': 45.0 * ratio * qty});
+
+      final screwQty05 = (10 * ratio).ceil();
+      items.add({'name': 'স্ক্রু ০.৫"', 'unit': 'পিস', 'qty': screwQty05 * qty, 'rate': 0.8, 'cost': 8.0 * ratio * qty});
+
+      final muhierFt = (12 * ratio).round();
+      items.add({'name': 'মুহির', 'unit': 'ফুট', 'qty': muhierFt * qty, 'rate': 1.42, 'cost': 17.0 * ratio * qty});
+
+      final rubberFt = (22.5 * ratio).round();
+      items.add({'name': 'রাবার', 'unit': 'ফুট', 'qty': rubberFt * qty, 'rate': 2.0, 'cost': 45.0 * ratio * qty});
+
+      // ── ৪'' Extra items (on top of ৩'') ──
+      if (is4Inch) {
+        items.add({'name': 'নেট এঙ্গেল', 'unit': 'পিস', 'qty': 4 * qty, 'rate': 25.0, 'cost': 100.0 * qty});
+        items.add({'name': 'নেট হুইল', 'unit': 'পিস', 'qty': 4 * qty, 'rate': 25.0, 'cost': 100.0 * qty});
+
+        final netFt = (12 * ratio).round();
+        items.add({'name': 'নেট', 'unit': 'ফুট', 'qty': netFt * qty, 'rate': 10.0, 'cost': 120.0 * ratio * qty});
+
+        final rippitQty = (16 * ratio).ceil();
+        items.add({'name': 'রিপ্পিট', 'unit': 'পিস', 'qty': rippitQty * qty, 'rate': 0.69, 'cost': 11.0 * ratio * qty});
+      }
+    }
+    return items;
+  }
+
+  /// Total hardware cost from detailed breakdown
   double calcHwTotal() {
-    return calcTotalSft() * hwRatePerSft;
+    final items = calcHardwareBreakdown();
+    double total = 0;
+    for (var item in items) {
+      total += (item['cost'] as double);
+    }
+    return total;
   }
 
   // Calculate total glass cost based on glass brand Sft rate

@@ -79,27 +79,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       // Force update → বাধ্যতামূলক dialog, বন্ধ করা যাবে না
       if (mounted) await showUpdateDialog(context, updateInfo);
     } else {
-      // Normal update → dismissable banner (একবারই দেখাবে)
+      // Normal update → dismissable dialog, "আপডেট করুন" e directly link e jabe
       if (mounted && !_normalUpdateBannerShown) {
         _normalUpdateBannerShown = true;
-        final latestVersion = updateInfo['latest_version']?.toString() ?? '';
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                "নতুন ভার্সন ($latestVersion) পাওয়া গেছে। আপডেট করতে যোগাযোগ করুন।",
-                style: GoogleFonts.hindSiliguri(color: Colors.white, fontSize: 13),
-              ),
-              backgroundColor: cAccent,
-              duration: const Duration(seconds: 5),
-              action: SnackBarAction(
-                label: "বন্ধ করুন",
-                textColor: cBg,
-                onPressed: () {},
-              ),
-            ),
-          );
-        }
+        if (mounted) await showUpdateDialog(context, updateInfo);
       }
     }
   }
@@ -279,7 +262,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _isLoading = false;
       });
     } catch (e) {
-      print("Error loading invoices: $e");
       setState(() => _isLoading = false);
     }
   }
@@ -442,8 +424,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       subtitle: Text("01710460274", style: GoogleFonts.inter(color: cMuted, fontSize: 11)),
                       onTap: () async {
                         final uri = Uri.parse("https://wa.me/8801710460274");
-                        if (await canLaunchUrl(uri)) {
+                        try {
                           await launchUrl(uri, mode: LaunchMode.externalApplication);
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text("WhatsApp খুলতে পারা যায়নি। WhatsApp ইনস্টল আছে কিনা চেক করুন।",
+                                    style: GoogleFonts.hindSiliguri(color: Colors.white, fontSize: 13)),
+                                backgroundColor: cAccent2,
+                              ),
+                            );
+                          }
                         }
                       },
                     ),
@@ -456,8 +448,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       subtitle: Text("01305232039", style: GoogleFonts.inter(color: cMuted, fontSize: 11)),
                       onTap: () async {
                         final uri = Uri.parse("tel:+8801305232039");
-                        if (await canLaunchUrl(uri)) {
+                        try {
                           await launchUrl(uri);
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text("ফোন ডায়ালার খুলতে পারা যায়নি।",
+                                    style: GoogleFonts.hindSiliguri(color: Colors.white, fontSize: 13)),
+                                backgroundColor: cAccent2,
+                              ),
+                            );
+                          }
                         }
                       },
                     ),
@@ -470,8 +472,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       subtitle: Text("01787203830", style: GoogleFonts.inter(color: cMuted, fontSize: 11)),
                       onTap: () async {
                         final uri = Uri.parse("tel:+8801787203830");
-                        if (await canLaunchUrl(uri)) {
+                        try {
                           await launchUrl(uri);
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text("ফোন ডায়ালার খুলতে পারা যায়নি।",
+                                    style: GoogleFonts.hindSiliguri(color: Colors.white, fontSize: 13)),
+                                backgroundColor: cAccent2,
+                              ),
+                            );
+                          }
                         }
                       },
                     ),
@@ -515,6 +527,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           },
         ),
         const SizedBox(height: 12),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: Center(
+            child: Text(
+              "DeshTec",
+              style: GoogleFonts.outfit(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFFF0F0F0).withOpacity(0.6),
+                letterSpacing: 2.0,
+              ),
+            ),
+          ),
+        ),
       ],
     ),
   ),
@@ -567,7 +593,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             padding: const EdgeInsets.symmetric(horizontal: 16),
                             itemCount: _invoices.length,
                             itemBuilder: (ctx, idx) {
-                              return _buildInvoiceCard(_invoices[idx]);
+                              return _buildInvoiceCard(_invoices[idx], idx);
                             },
                           ),
               ),
@@ -651,66 +677,121 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildInvoiceCard(Map<String, dynamic> inv) {
+  Widget _buildInvoiceCard(Map<String, dynamic> inv, int index) {
     double due = (inv['due'] as num).toDouble();
     bool isPaid = due <= 0;
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => InvoiceDetailScreen(invoice: inv)),
+    return Dismissible(
+      key: Key('invoice_$index'),
+      direction: DismissDirection.horizontal,
+      background: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: cAccent2.withOpacity(0.2),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        alignment: Alignment.centerLeft,
+        child: const Icon(Icons.delete_rounded, color: cAccent2, size: 28),
+      ),
+      secondaryBackground: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: cAccent2.withOpacity(0.2),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        alignment: Alignment.centerRight,
+        child: const Icon(Icons.delete_rounded, color: cAccent2, size: 28),
+      ),
+      confirmDismiss: (direction) async {
+        return await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: cCard,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: const BorderSide(color: cBorder),
+            ),
+            title: Text("মুছে ফেলুন?",
+                style: GoogleFonts.hindSiliguri(color: cText, fontWeight: FontWeight.bold)),
+            content: Text("এই হিসাবটি মুছে ফেলতে চান?",
+                style: GoogleFonts.hindSiliguri(color: cMuted)),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: Text("না", style: GoogleFonts.hindSiliguri(color: cMuted)),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: Text("মুছুন", style: GoogleFonts.hindSiliguri(color: cAccent2, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
         );
       },
-      child: Container(
-      margin: const EdgeInsets.only(bottom: 10),
-
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: cCard,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: cBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(inv['name']?.toString() ?? '',
-                    style: GoogleFonts.hindSiliguri(
-                        color: cText, fontWeight: FontWeight.bold, fontSize: 14)),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                    color: cAccent2, borderRadius: BorderRadius.circular(4)),
-                child: Text(inv['brand']?.toString() ?? '',
-                    style: GoogleFonts.inter(
-                        color: cBg, fontSize: 10, fontWeight: FontWeight.bold)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(inv['phone']?.toString() ?? '',
-              style: GoogleFonts.inter(color: cMuted, fontSize: 12)),
-          const Divider(color: cBorder, height: 18),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text("মোট: ৳ ${_fmtTk((inv['total'] as num).toDouble())}",
-                  style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 12)),
-              Text(
-                isPaid ? "✓ পরিশোধ" : "বাকি: ৳ ${_fmtTk(due)}",
-                style: GoogleFonts.hindSiliguri(
-                    color: isPaid ? cGreen : cAccent2,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13),
-              ),
-            ],
-          ),
-        ],
-      ),
+      onDismissed: (direction) async {
+        await DatabaseService.instance.deleteInvoice(index);
+        setState(() {
+          _invoices.removeAt(index);
+        });
+      },
+      child: GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => InvoiceDetailScreen(invoice: inv)),
+          );
+        },
+        child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: cCard,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: cBorder),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(inv['name']?.toString() ?? '',
+                      style: GoogleFonts.hindSiliguri(
+                          color: cText, fontWeight: FontWeight.bold, fontSize: 14)),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                      color: cAccent2, borderRadius: BorderRadius.circular(4)),
+                  child: Text(inv['brand']?.toString() ?? '',
+                      style: GoogleFonts.inter(
+                          color: cBg, fontSize: 10, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(inv['phone']?.toString() ?? '',
+                style: GoogleFonts.inter(color: cMuted, fontSize: 12)),
+            const Divider(color: cBorder, height: 18),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text("মোট: ৳ ${_fmtTk((inv['total'] as num).toDouble())}",
+                    style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 12)),
+                Text(
+                  isPaid ? "✓ পরিশোধ" : "বাকি: ৳ ${_fmtTk(due)}",
+                  style: GoogleFonts.hindSiliguri(
+                      color: isPaid ? cGreen : cAccent2,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13),
+                ),
+              ],
+            ),
+          ],
+        ),
+        ),
       ),
     );
   }

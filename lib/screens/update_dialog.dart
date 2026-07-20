@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -105,6 +107,28 @@ Future<void> showUpdateDialog(BuildContext context, Map<String, dynamic> updateI
                     ),
                   ),
                 ),
+                if (force) ...[
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: TextButton(
+                      onPressed: () {
+                        Navigator.of(dialogContext).pop();
+                        Future.delayed(const Duration(milliseconds: 300), () {
+                          if (Platform.isAndroid) {
+                            SystemNavigator.pop();
+                          } else {
+                            exit(0);
+                          }
+                        });
+                      },
+                      child: Text(
+                        "বন্ধ করুন",
+                        style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 13),
+                      ),
+                    ),
+                  ),
+                ],
                 if (!force) ...[
                   const SizedBox(height: 8),
                   TextButton(

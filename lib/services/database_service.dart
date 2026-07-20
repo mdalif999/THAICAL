@@ -112,8 +112,7 @@ class DatabaseService {
           print('Auto-restore REJECTED: session mismatch or inactive. Forcing sign out.');
           await _client.auth.signOut();
           currentUserProfileNotifier.value = null;
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.clear();
+          await _clearAuthDataOnly();
         } else {
           print('Auto-restore ACCEPTED: session matches this device.');
           currentUserProfileNotifier.value = profileData;
@@ -191,24 +190,28 @@ class DatabaseService {
   }
 
   // ── Effective access/paid calculation (single source of truth) ──
-  // is_active = master switch. Paid subscription OR trial (whichever valid) grants access.
+  // is_active = master switch. Trial (free user) OR Paid subscription grants access.
   bool hasAccess(Map<String, dynamic> profile) {
     if (profile['is_active'] != true) return false;
 
     final now = DateTime.now().toUtc();
 
+    // 1. Trial check (free user)
+    final trialExpiry = profile['trial_ends_at'] != null
+        ? DateTime.tryParse(profile['trial_ends_at'].toString())?.toUtc()
+        : null;
+    final isTrialValid = trialExpiry != null && now.isBefore(trialExpiry);
+    if (isTrialValid) return true;
+
+    // 2. Paid subscription check
     final paidExpiry = profile['subscription_expires_at'] != null
         ? DateTime.tryParse(profile['subscription_expires_at'].toString())?.toUtc()
         : null;
     final isPaidValid = profile['is_paid'] == true &&
         (paidExpiry == null || now.isBefore(paidExpiry));
+    final hasValidExpiry = paidExpiry != null && now.isBefore(paidExpiry);
 
-    final trialExpiry = profile['trial_ends_at'] != null
-        ? DateTime.tryParse(profile['trial_ends_at'].toString())?.toUtc()
-        : null;
-    final isTrialValid = trialExpiry != null && now.isBefore(trialExpiry);
-
-    return isPaidValid || isTrialValid;
+    return isPaidValid || hasValidExpiry;
   }
 
   // দিন হিসেবে কত দিন বাকি আছে (পুরনো callers এর জন্য রাখা হয়েছে)
@@ -218,10 +221,19 @@ class DatabaseService {
     return remaining?.inDays;
   }
 
-  // Exact Duration বাকি আছে (paid subscription বা trial, যেটা active)। null মানে কিছু track করার নাই।
+  // Exact Duration বাকি আছে (trial first, then paid subscription)। null মানে কিছু track করার নাই।
   Duration? timeRemaining(Map<String, dynamic> profile) {
     final now = DateTime.now().toUtc();
 
+    // 1. Trial check (free user)
+    final trialExpiry = profile['trial_ends_at'] != null
+        ? DateTime.tryParse(profile['trial_ends_at'].toString())?.toUtc()
+        : null;
+    if (trialExpiry != null && now.isBefore(trialExpiry)) {
+      return trialExpiry.difference(now);
+    }
+
+    // 2. Paid subscription check
     final paidExpiry = profile['subscription_expires_at'] != null
         ? DateTime.tryParse(profile['subscription_expires_at'].toString())?.toUtc()
         : null;
@@ -234,11 +246,9 @@ class DatabaseService {
       }
     }
 
-    final trialExpiry = profile['trial_ends_at'] != null
-        ? DateTime.tryParse(profile['trial_ends_at'].toString())?.toUtc()
-        : null;
-    if (trialExpiry != null && now.isBefore(trialExpiry)) {
-      return trialExpiry.difference(now);
+    // subscription_expires_at সেট থাকলেও remaining time দেখাও (is_paid true না হলেও)
+    if (paidExpiry != null && now.isBefore(paidExpiry)) {
+      return paidExpiry.difference(now);
     }
 
     return null;
@@ -327,6 +337,15 @@ class DatabaseService {
 
           final deviceId = await _getOrCreateDeviceId();
 
+          // Expire হয়ে থাকলে DB তে is_paid সত্যিকারভাবে false করে দেওয়া
+          await _syncExpiredPaidStatus(profileData);
+
+          // ── Subscription expire check (set_active_session এর আগেই) ──
+          if (!hasAccess(profileData)) {
+            await _client.auth.signOut();
+            throw Exception('expired');
+          }
+
           // ── Session Lock: check if another device is already active ──
           final existingSession = profileData['active_session_id']?.toString();
           if (existingSession != null && existingSession != deviceId) {
@@ -352,9 +371,6 @@ class DatabaseService {
 
           print('Session Lock: GRANTED - active_session_id set to $deviceId');
           profileData['active_session_id'] = deviceId;
-
-          // Expire হয়ে থাকলে DB তে is_paid সত্যিকারভাবে false করে দেওয়া
-          await _syncExpiredPaidStatus(profileData);
 
           currentUserProfileNotifier.value = profileData;
           await saveProfileLocally(profileData);
@@ -438,69 +454,79 @@ class DatabaseService {
   }
 
   Timer? _sessionTimer;
+  RealtimeChannel? _sessionChannel;
 
   void startSessionMonitoring() {
-    _sessionTimer?.cancel();
-    _sessionTimer = Timer.periodic(const Duration(seconds: 45), (timer) async {
-      final userId = isFallbackMode ? 'mock-user-uuid' : _client.auth.currentUser?.id;
-      if (userId == null || currentUserProfile == null) {
-        timer.cancel();
-        return;
-      }
+    // ✅ আগে থেকে কোনো channel থাকলে সেটা আগে unsubscribe করো
+    _sessionChannel?.unsubscribe();
+    _sessionChannel = null;
 
-      // 1. First run the comprehensive offline checks (clock tampering, local expiry, etc.)
+    final userId = isFallbackMode ? 'mock-user-uuid' : _client.auth.currentUser?.id;
+    if (userId == null || currentUserProfile == null) return;
+    if (isFallbackMode) return;
+
+    // ── Realtime: profile row বদলালেই সাথে সাথে ধরা পড়বে ──
+    _sessionChannel = _client
+        .channel('session-watch-$userId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'profiles',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'id',
+            value: userId,
+          ),
+          callback: (payload) async {
+            final newProfile = payload.newRecord;
+            currentUserProfileNotifier.value = newProfile;
+            await saveProfileLocally(newProfile);
+
+            final isActive = newProfile['is_active'] == true;
+            final access = hasAccess(newProfile);
+
+            if (!isActive || !access) {
+              final reason = !isActive ? 'blocked' : 'expired';
+              await _handleForceLogout(reason);
+            }
+          },
+        )
+        .subscribe();
+
+    // ── Backup: প্রতি ৫ মিনিটে শুধু offline/clock-tampering check (হালকা, লোকাল) ──
+    _sessionTimer?.cancel();
+    _sessionTimer = Timer.periodic(const Duration(minutes: 5), (timer) async {
       final offlineCheck = await checkOfflineSubscription();
       if (!offlineCheck['status']) {
         timer.cancel();
         final reason = offlineCheck['reason']?.toString() ?? 'blocked';
-        final name = currentUserProfile?['name']?.toString();
-        final phoneEmail = currentUserProfile?['phone_email']?.toString();
-
-        await logout();
-
-        navigatorKey.currentState?.pushNamedAndRemoveUntil(
-          '/deactivated',
-          (route) => false,
-          arguments: {
-            'reason': reason,
-            'name': name,
-            'phone_email': phoneEmail,
-          },
-        );
-        return;
-      }
-
-      // 2. Sync and check online status if possible
-      final onlineState = await checkOnlineStatus();
-      final isActive = onlineState['is_active'] == true;
-      final hasAcc = onlineState['has_access'] == true;
-
-      if (!isActive || !hasAcc) {
-        timer.cancel();
-        final reason = onlineState['reason']?.toString() ?? 
-            (!isActive ? 'blocked' : 'expired');
-            
-        final name = currentUserProfile?['name']?.toString();
-        final phoneEmail = currentUserProfile?['phone_email']?.toString();
-
-        await logout();
-
-        navigatorKey.currentState?.pushNamedAndRemoveUntil(
-          '/deactivated',
-          (route) => false,
-          arguments: {
-            'reason': reason,
-            'name': name,
-            'phone_email': phoneEmail,
-          },
-        );
+        await _handleForceLogout(reason);
       }
     });
+  }
+
+  Future<void> _handleForceLogout(String reason) async {
+    final name = currentUserProfile?['name']?.toString();
+    final phoneEmail = currentUserProfile?['phone_email']?.toString();
+
+    await logout();
+
+    navigatorKey.currentState?.pushNamedAndRemoveUntil(
+      '/deactivated',
+      (route) => false,
+      arguments: {
+        'reason': reason,
+        'name': name,
+        'phone_email': phoneEmail,
+      },
+    );
   }
 
   void stopSessionMonitoring() {
     _sessionTimer?.cancel();
     _sessionTimer = null;
+    _sessionChannel?.unsubscribe();
+    _sessionChannel = null;
   }
 
   Future<void> logout() async {
@@ -519,13 +545,29 @@ class DatabaseService {
       }
     }
     currentUserProfileNotifier.value = null;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
+    await _clearAuthDataOnly();
     if (!isFallbackMode) {
       try {
         await _client.auth.signOut();
       } catch (_) {}
     }
+  }
+
+  // ── শুধু Auth-Related Keys মুছবে (invoices, cache, pic রাখবে) ──
+  Future<void> _clearAuthDataOnly() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('cached_uid');
+    await prefs.remove('cached_name');
+    await prefs.remove('cached_phone_email');
+    await prefs.remove('is_active');
+    await prefs.remove('is_paid');
+    await prefs.remove('subscription_expires_at');
+    await prefs.remove('trial_ends_at');
+    await prefs.remove('last_online_check');
+    await prefs.remove('last_known_time');
+    await prefs.remove('is_clock_tampered');
+    await prefs.remove('sync_wall_time');
+    await prefs.remove('sync_elapsed_ms');
   }
 
   // ── Local Storage Management (Offline Subscription Caching) ──
@@ -867,6 +909,20 @@ if (userId == null) {
       return [];
     }
   }
+
+  Future<void> deleteInvoice(int index) async {
+  final prefs = await SharedPreferences.getInstance();
+  final listStr = prefs.getString('saved_invoices');
+  if (listStr == null) return;
+  try {
+    final List<dynamic> invoices = jsonDecode(listStr) as List<dynamic>;
+    if (index < 0 || index >= invoices.length) return;
+    invoices.removeAt(index);
+    await prefs.setString('saved_invoices', jsonEncode(invoices));
+  } catch (e) {
+    print('Error deleting invoice: $e');
+  }
+}
 
   // ── App Update Check ──
   // app_config table (Supabase) দেখে বলে দেয় নতুন version আছে কিনা, আর force করতে হবে কিনা।

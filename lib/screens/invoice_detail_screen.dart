@@ -190,13 +190,13 @@ class InvoiceDetailScreen extends StatelessWidget {
                       ),
                       const Divider(color: cBorder, height: 1),
                       const SizedBox(height: 6),
-                      _buildCutRow("O/S আউটার খাড়া", cuts['os'], cutPrices['os']),
+                      _buildCutRow("O/S আউটার সাইড", cuts['os'], cutPrices['os']),
                       _buildCutRow("O/T আউটার টপ", cuts['ot'], cutPrices['ot']),
-                      _buildCutRow("O/B আউটার বটম", cuts['ohb'], cutPrices['ohb']),
-                      _buildCutRow("S/L পাল্লা লক", cuts['sl'], cutPrices['sl']),
-                      _buildCutRow("I/L পাল্লা ইন্টারলক", cuts['il'], cutPrices['il']),
-                      _buildCutRow("S/T পাল্লা টপ", cuts['st'], cutPrices['st']),
-                      _buildCutRow("S/B পাল্লা বটম", cuts['sb'], cutPrices['sb']),
+                      _buildCutRow("OHB আউটার হাই বটম", cuts['ohb'], cutPrices['ohb']),
+                      _buildCutRow("S/L স্লাইডিং লক", cuts['sl'], cutPrices['sl']),
+                      _buildCutRow("I/L ইন্টারলক", cuts['il'], cutPrices['il']),
+                      _buildCutRow("S/T শাটার টপ", cuts['st'], cutPrices['st']),
+                      _buildCutRow("S/B শাটার বটম", cuts['sb'], cutPrices['sb']),
                       if (invoice['profile_size']?.toString().contains('4') == true) ...[
                         _buildCutRow("N/S নেট সেকশন", cuts['ns'], cutPrices['ns']),
                         _buildCutRow("N/H নেট হ্যান্ডেল", cuts['nh'], cutPrices['nb']),
@@ -217,9 +217,15 @@ class InvoiceDetailScreen extends StatelessWidget {
                       Text("🔧 হার্ডওয়্যার",
                           style: GoogleFonts.hindSiliguri(color: cText, fontSize: 14, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 10),
-                      _buildMoneyRow(
-                          "হার্ডওয়্যার (${totalSft.toStringAsFixed(1)} Sft × ৳${_fmtTk((invoice['hwRate'] as num?)?.toDouble() ?? 25)})",
-                          (invoice['hwTotal'] as num).toDouble()),
+                      if (invoice['hwItems'] != null) ...[
+                        _buildHwTableHeader(),
+                        const Divider(color: cBorder, height: 1),
+                        for (var item in (invoice['hwItems'] as List))
+                          _buildHwRow(item as Map<String, dynamic>),
+                        const Divider(color: cBorder, height: 16),
+                      ],
+                      _buildMoneyRow("হার্ডওয়্যার মোট", (invoice['hwTotal'] as num).toDouble(),
+                          isBold: true, color: cYellow),
                     ],
                   )),
                   const SizedBox(height: 12),
@@ -319,13 +325,13 @@ class InvoiceDetailScreen extends StatelessWidget {
       cutBuffer.writeln();
 
       final cutItems = [
-        ['O/S (আউটার খাড়া)', cuts['os'], cutPrices['os']],
+        ['O/S (আউটার সাইড)', cuts['os'], cutPrices['os']],
         ['O/T (আউটার টপ)', cuts['ot'], cutPrices['ot']],
-        ['O/B (আউটার বটম)', cuts['ohb'], cutPrices['ohb']],
-        ['S/L (পাল্লা লক)', cuts['sl'], cutPrices['sl']],
-        ['I/L (পাল্লা ইন্টারলক)', cuts['il'], cutPrices['il']],
-        ['S/T (পাল্লা টপ)', cuts['st'], cutPrices['st']],
-        ['S/B (পাল্লা বটম)', cuts['sb'], cutPrices['sb']],
+        ['OHB (আউটার হাই বটম)', cuts['ohb'], cutPrices['ohb']],
+        ['S/L (স্লাইডিং লক)', cuts['sl'], cutPrices['sl']],
+        ['I/L (ইন্টারলক)', cuts['il'], cutPrices['il']],
+        ['S/T (শাটার টপ)', cuts['st'], cutPrices['st']],
+        ['S/B (শাটার বটম)', cuts['sb'], cutPrices['sb']],
       ];
       if (is4Inch) {
         cutItems.add(['N/S (নেট সেকশন)', cuts['ns'], cutPrices['ns']]);
@@ -375,9 +381,22 @@ class InvoiceDetailScreen extends StatelessWidget {
     buffer.write(cutBuffer);
     buffer.writeln("====================================");
     buffer.write(glassBuffer);
-    if (hwTotal > 0) {
+    // Hardware breakdown
+    final hwItems = invoice['hwItems'] as List?;
+    if (hwItems != null && hwItems.isNotEmpty) {
+      buffer.writeln("হার্ডওয়্যার হিসাব:");
+      buffer.writeln("--------------------");
+      for (var item in hwItems) {
+        final hwItem = item as Map<String, dynamic>;
+        final cost = (hwItem['cost'] as num?)?.toDouble() ?? 0;
+        final rate = (hwItem['rate'] as num?)?.toDouble() ?? 0;
+        buffer.writeln("  ${hwItem['name']} — ${hwItem['qty']} ${hwItem['unit']} × ৳${_fmtTk(rate)} = ৳${_fmtTk(cost)}");
+      }
+      buffer.writeln("  -------------------");
+      buffer.writeln("  হার্ডওয়্যার মোট: ৳${_fmtTk(hwTotal)}");
+      buffer.writeln();
+    } else if (hwTotal > 0) {
       buffer.writeln("হার্ডওয়্যার: ৳${_fmtTk(hwTotal)}");
-      buffer.writeln("  (${totalSft.toStringAsFixed(1)} Sft x ৳${_fmtTk(hwRate)})");
     }
     if (labor > 0) {
       buffer.writeln("মজুরি/ফিটিং: ৳${_fmtTk(labor)}");
@@ -480,6 +499,38 @@ class InvoiceDetailScreen extends StatelessWidget {
                 color: isBold ? cText : cMuted, fontSize: size - 1, fontWeight: isBold ? FontWeight.bold : FontWeight.normal)),
         Text("৳ ${_fmtTk(amount)}",
             style: GoogleFonts.inter(color: color ?? cText, fontSize: size, fontWeight: FontWeight.bold)),
+      ]),
+    );
+  }
+
+  Widget _buildHwTableHeader() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(children: [
+        Expanded(flex: 3, child: Text("আইটেম", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11))),
+        SizedBox(width: 45, child: Text("পরিমাণ", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.center)),
+        SizedBox(width: 35, child: Text("ইউনিট", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.center)),
+        SizedBox(width: 55, child: Text("দর", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.right)),
+        SizedBox(width: 65, child: Text("মোট", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.right)),
+      ]),
+    );
+  }
+
+  Widget _buildHwRow(Map<String, dynamic> item) {
+    final cost = (item['cost'] as num?)?.toDouble() ?? 0;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(children: [
+        Expanded(flex: 3, child: Text(item['name'] as String? ?? '',
+            style: GoogleFonts.hindSiliguri(color: cText, fontSize: 12))),
+        SizedBox(width: 45, child: Text("${item['qty']}",
+            style: GoogleFonts.inter(color: cText, fontSize: 12), textAlign: TextAlign.center)),
+        SizedBox(width: 35, child: Text(item['unit'] as String? ?? '',
+            style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.center)),
+        SizedBox(width: 55, child: Text("৳${_fmtTk((item['rate'] as num?)?.toDouble() ?? 0)}",
+            style: GoogleFonts.inter(color: cMuted, fontSize: 11), textAlign: TextAlign.right)),
+        SizedBox(width: 65, child: Text("৳${_fmtTk(cost)}",
+            style: GoogleFonts.inter(color: cGreen, fontSize: 12, fontWeight: FontWeight.bold), textAlign: TextAlign.right)),
       ]),
     );
   }
