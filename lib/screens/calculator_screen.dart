@@ -1018,7 +1018,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     {"name": "O/S আউটার সাইড", "inch": osI, "price": _selectedThaiColorSet!.priceOs},
     {"name": "O/T আউটার টপ", "inch": otI, "price": _selectedThaiColorSet!.priceOt},
     {"name": "OHB আউটার হাই বটম", "inch": ohbI, "price": _selectedThaiColorSet!.priceOhb},
-    {"name": "S/L স্লাইডিং লক", "inch": slI, "price": _selectedThaiColorSet!.priceSl},
+    {"name": "S/L শাটার লক", "inch": slI, "price": _selectedThaiColorSet!.priceSl},
     {"name": "I/L ইন্টারলক", "inch": ilI, "price": _selectedThaiColorSet!.priceIl},
     {"name": "S/T শাটার টপ", "inch": stI, "price": _selectedThaiColorSet!.priceSt},
     {"name": "S/B শাটার বটম", "inch": sbI, "price": _selectedThaiColorSet!.priceSb},
