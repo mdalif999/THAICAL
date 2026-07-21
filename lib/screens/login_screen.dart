@@ -34,6 +34,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   static const Color cAccent2 = Color(0xFFFF6B35);
   static const Color cText = Color(0xFFE8EAF0);
   static const Color cMuted = Color(0xFF6B7280);
+  static const Color cGreen = Color(0xFF22C55E);
 
   @override
   void initState() {
@@ -172,6 +173,136 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     );
   }
 
+  void _showForgotPasswordDialog() {
+    final controller = TextEditingController(text: _phoneEmailController.text);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: cCard,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: cBorder)),
+        title: Text("পাসওয়ার্ড রিসেট", style: GoogleFonts.hindSiliguri(color: cText, fontWeight: FontWeight.bold)),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text("আপনার ফোন নম্বর বা ইমেইল দিন। একই ডিভাইস থেকে রিসেট করতে হবে।",
+              style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 13)),
+          const SizedBox(height: 12),
+          TextField(
+            controller: controller,
+            style: GoogleFonts.inter(color: cText, fontSize: 14),
+            decoration: InputDecoration(
+              hintText: "০১৭xxxxxxxx / user@email.com",
+              hintStyle: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 13),
+              enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: cBorder)),
+              focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: cAccent)),
+            ),
+          ),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text("বাতিল", style: GoogleFonts.hindSiliguri(color: cMuted))),
+          ElevatedButton(
+            onPressed: () async {
+              final phoneEmail = controller.text.trim();
+              if (phoneEmail.isEmpty) {
+                ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text("নম্বর দিন!", style: GoogleFonts.hindSiliguri())));
+                return;
+              }
+              Navigator.pop(ctx);
+              _verifyAndResetPassword(phoneEmail);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: cAccent),
+            child: Text("যাচাই করুন", style: GoogleFonts.hindSiliguri(color: cBg)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _verifyAndResetPassword(String phoneEmail) async {
+    setState(() => _isLoading = true);
+    try {
+      final result = await DatabaseService.instance.forgotPasswordVerify(phoneEmail);
+      if (!mounted) return;
+
+      if (!result['found']!) {
+        _showError("এই নম্বর/ইমেইল দিয়ে কোনো অ্যাকাউন্ট পাওয়া যায়নি।");
+        return;
+      }
+
+      if (!result['matched']!) {
+        _showError("এই ডিভাইস থেকে অ্যাকাউন্ট যাচাই করা যায়নি। সেই ডিভাইস ব্যবহার করুন।");
+        return;
+      }
+
+      // Device matched — show new password dialog
+      final newPassController = TextEditingController();
+      final confirmPassController = TextEditingController();
+      final result2 = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: cCard,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: cBorder)),
+          title: Text("নতুন পাসওয়ার্ড দিন", style: GoogleFonts.hindSiliguri(color: cText, fontWeight: FontWeight.bold)),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(
+              controller: newPassController,
+              obscureText: true,
+              style: GoogleFonts.inter(color: cText, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: "নতুন পাসওয়ার্ড (অন্তত ৬ অক্ষর)",
+                hintStyle: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 13),
+                enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: cBorder)),
+                focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: cAccent)),
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: confirmPassController,
+              obscureText: true,
+              style: GoogleFonts.inter(color: cText, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: "পাসওয়ার্ড নিশ্চিত করুন",
+                hintStyle: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 13),
+                enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: cBorder)),
+                focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: cAccent)),
+              ),
+            ),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text("বাতিল", style: GoogleFonts.hindSiliguri(color: cMuted))),
+            ElevatedButton(
+              onPressed: () {
+                if (newPassController.text.length < 6) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text("অন্তত ৬ অক্ষর দিন!", style: GoogleFonts.hindSiliguri())));
+                  return;
+                }
+                if (newPassController.text != confirmPassController.text) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text("পাসওয়ার্ড মিলেনি!", style: GoogleFonts.hindSiliguri())));
+                  return;
+                }
+                Navigator.pop(ctx, true);
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: cAccent),
+              child: Text("রিসেট করুন", style: GoogleFonts.hindSiliguri(color: cBg)),
+            ),
+          ],
+        ),
+      );
+
+      if (result2 == true) {
+        await DatabaseService.instance.resetPassword(phoneEmail, newPassController.text);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text("পাসওয়ার্ড পরিবর্তন হয়েছে! নতুন পাসওয়ার্ড দিয়ে লগইন করুন।", style: GoogleFonts.hindSiliguri(color: Colors.white)),
+            backgroundColor: cGreen,
+          ));
+        }
+      }
+    } catch (e) {
+      _showError("ত্রুটি: ${e.toString().replaceAll('Exception: ', '')}");
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -306,6 +437,14 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                           }
                                           return null;
                                         },
+                                      ),
+                                      Align(
+                                        alignment: Alignment.centerRight,
+                                        child: TextButton(
+                                          onPressed: _showForgotPasswordDialog,
+                                          child: Text("পাসওয়ার্ড ভুলে গেছেন?",
+                                              style: GoogleFonts.hindSiliguri(color: cAccent2, fontSize: 13)),
+                                        ),
                                       ),
                                       const Spacer(),
                                       ElevatedButton(
