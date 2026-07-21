@@ -77,9 +77,25 @@ class WindowCalculation {
     return total;
   }
 
+  // Parse specLength string (e.g. "21'-0\"") to total inches
+  static double calcSpecLengthInches(String? specLength) {
+    if (specLength == null || specLength.isEmpty) return 252.0;
+    try {
+      final feetMatch = RegExp(r"(\d+)'\s*-?\s*(\d+)?").firstMatch(specLength);
+      if (feetMatch != null) {
+        final feet = int.parse(feetMatch.group(1)!);
+        final inches = int.tryParse(feetMatch.group(2) ?? '0') ?? 0;
+        return (feet * 12 + inches).toDouble();
+      }
+      final plain = double.tryParse(specLength.replaceAll(RegExp(r'[^\d.]'), ''));
+      if (plain != null) return plain;
+    } catch (_) {}
+    return 252.0;
+  }
+
   // Convert inches of cut to bar count
-  static double inchToBars(double inch) {
-    return inch / 192.0;
+  static double inchToBars(double inch, {double? specLengthInches}) {
+    return inch / (specLengthInches ?? 252.0);
   }
 
   // Calculate cut inches breakdown (মিস্ত্রিদের খাঁটি বাংলাদেশি প্র্যাক্টিক্যাল হিসাব)
@@ -149,11 +165,12 @@ class WindowCalculation {
   int calcAluTotal() {
     if (selectedThaiColorSet == null) return 0;
     final cuts = calcCutInches();
-    double total = (inchToBars(cuts['os']!) * selectedThaiColorSet!.priceOs +
-        inchToBars(cuts['ot']!) * selectedThaiColorSet!.priceOt +
-        inchToBars(cuts['ohb']!) * selectedThaiColorSet!.priceOhb +
-        inchToBars(cuts['sl']!) * selectedThaiColorSet!.priceSl +
-        inchToBars(cuts['il']!) * selectedThaiColorSet!.priceIl +
+    final specInches = calcSpecLengthInches(selectedThaiColorSet!.specLength);
+    double total = (inchToBars(cuts['os']!, specLengthInches: specInches) * selectedThaiColorSet!.priceOs +
+        inchToBars(cuts['ot']!, specLengthInches: specInches) * selectedThaiColorSet!.priceOt +
+        inchToBars(cuts['ohb']!, specLengthInches: specInches) * selectedThaiColorSet!.priceOhb +
+        inchToBars(cuts['sl']!, specLengthInches: specInches) * selectedThaiColorSet!.priceSl +
+        inchToBars(cuts['il']!, specLengthInches: specInches) * selectedThaiColorSet!.priceIl +
         inchToBars(cuts['st']!) * selectedThaiColorSet!.priceSt +
         inchToBars(cuts['sb']!) * selectedThaiColorSet!.priceSb);
 

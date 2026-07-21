@@ -680,69 +680,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget _buildInvoiceCard(Map<String, dynamic> inv, int index) {
     double due = (inv['due'] as num).toDouble();
     bool isPaid = due <= 0;
-    return Dismissible(
-      key: Key('invoice_$index'),
-      direction: DismissDirection.horizontal,
-      background: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: cAccent2.withOpacity(0.2),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        alignment: Alignment.centerLeft,
-        child: const Icon(Icons.delete_rounded, color: cAccent2, size: 28),
-      ),
-      secondaryBackground: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: cAccent2.withOpacity(0.2),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        alignment: Alignment.centerRight,
-        child: const Icon(Icons.delete_rounded, color: cAccent2, size: 28),
-      ),
-      confirmDismiss: (direction) async {
-        return await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            backgroundColor: cCard,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: const BorderSide(color: cBorder),
-            ),
-            title: Text("মুছে ফেলুন?",
-                style: GoogleFonts.hindSiliguri(color: cText, fontWeight: FontWeight.bold)),
-            content: Text("এই হিসাবটি মুছে ফেলতে চান?",
-                style: GoogleFonts.hindSiliguri(color: cMuted)),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(false),
-                child: Text("না", style: GoogleFonts.hindSiliguri(color: cMuted)),
-              ),
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(true),
-                child: Text("মুছুন", style: GoogleFonts.hindSiliguri(color: cAccent2, fontWeight: FontWeight.bold)),
-              ),
-            ],
-          ),
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => InvoiceDetailScreen(invoice: inv)),
         );
       },
-      onDismissed: (direction) async {
-        await DatabaseService.instance.deleteInvoice(index);
-        setState(() {
-          _invoices.removeAt(index);
-        });
-      },
-      child: GestureDetector(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => InvoiceDetailScreen(invoice: inv)),
-          );
-        },
-        child: Container(
+      child: Container(
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
@@ -769,6 +714,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       style: GoogleFonts.inter(
                           color: cBg, fontSize: 10, fontWeight: FontWeight.bold)),
                 ),
+                const SizedBox(width: 8),
+                // ── Delete button (swipe বাদ, শুধু tap করে delete) ──
+                InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () => _confirmAndDeleteInvoice(index),
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: cAccent2.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.delete_rounded, color: cAccent2, size: 18),
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 6),
@@ -791,11 +750,44 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
           ],
         ),
-        ),
       ),
     );
   }
 
+  // ── Confirm dialog দেখিয়ে delete করা (swipe এর বদলে trash icon থেকে কল হয়) ──
+  Future<void> _confirmAndDeleteInvoice(int index) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: cCard,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: cBorder),
+        ),
+        title: Text("মুছে ফেলুন?",
+            style: GoogleFonts.hindSiliguri(color: cText, fontWeight: FontWeight.bold)),
+        content: Text("এই হিসাবটি মুছে ফেলতে চান?",
+            style: GoogleFonts.hindSiliguri(color: cMuted)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text("না", style: GoogleFonts.hindSiliguri(color: cMuted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text("মুছুন", style: GoogleFonts.hindSiliguri(color: cAccent2, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      await DatabaseService.instance.deleteInvoice(index);
+      setState(() {
+        _invoices.removeAt(index);
+      });
+    }
+  }
   String _fmtTk(double amount) => amount
       .toStringAsFixed(0)
       .replaceAllMapped(

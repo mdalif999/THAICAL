@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -21,10 +22,16 @@ class DatabaseService {
   DatabaseService._internal();
 
   // Trial length in days (change here only, used everywhere)
-  static const int trialDays = 30;
+  // ⚠️ Production e deploy korar age eta 30 (ba desired value) e ferot dio.
+  static const int trialDays = 1;
 
   // Reminder banner shows when this many days (or fewer) remain
   static const int reminderDaysBefore = 5;
+
+  // ── simple debug-only logger — production build e print hobe na ──
+  void _log(String message) {
+    if (kDebugMode) print(message);
+  }
 
   // ── Device Session ID (একটা ডিভাইস চেনার জন্য) ──
   Future<String> _getOrCreateDeviceId() async {
@@ -53,22 +60,24 @@ class DatabaseService {
     if (lastKnownStr != null) {
       final lastKnown = DateTime.tryParse(lastKnownStr);
       if (lastKnown != null && now.isBefore(lastKnown)) {
-        print("ALERT: Device clock rolled back! Blocking access.");
+        _log("ALERT: Device clock rolled back! Blocking access.");
         await prefs.setBool('is_clock_tampered', true);
       }
     }
     await prefs.setString('last_known_time', now.toIso8601String());
 
     // ── Clock tampering check (boot-time / elapsed-realtime based) ──
-    // elapsedRealtime বাড়তে থাকে device boot হওয়ার পর থেকে,
-    // user এটা wall-clock এর মতো পাল্টাতে পারে না।
     await _checkBootTimeTampering(prefs);
 
-    // Load cached profile if exists
+    // ── Load cached profile if exists ──
+    // ✅ FIX: cached_uid ও check kora hoy, shudhu cached_phone_email na.
+    // Logout korle cached_uid muche jay — tai cached_uid na thakle
+    // eta ke "logged in" dhora jabe na, LoginScreen e thik-thak thakbe.
     final cachedEmail = prefs.getString('cached_phone_email');
-    if (cachedEmail != null) {
+    final cachedUid = prefs.getString('cached_uid');
+    if (cachedEmail != null && cachedUid != null && cachedUid.isNotEmpty) {
       currentUserProfileNotifier.value = {
-        'id': prefs.getString('cached_uid') ?? 'cached-user',
+        'id': cachedUid,
         'name': prefs.getString('cached_name') ?? 'cached-user',
         'phone_email': cachedEmail,
         'is_active': prefs.getBool('is_active') ?? true,
@@ -79,7 +88,7 @@ class DatabaseService {
     }
 
     if (isFallbackMode) {
-      print('DatabaseService: Running in Mock Fallback Mode.');
+      _log('DatabaseService: Running in Mock Fallback Mode.');
       return;
     }
     try {
@@ -87,39 +96,50 @@ class DatabaseService {
         url: supabaseUrl,
         anonKey: supabaseKey,
       );
-      print('DatabaseService: Supabase Initialized.');
+      _log('DatabaseService: Supabase Initialized.');
     } catch (e) {
-      print('DatabaseService: Init Error: $e. Fallback to mock.');
+      _log('DatabaseService: Init Error: $e. Fallback to mock.');
     }
 
     // ✅ Supabase-এ আগে থেকেই একটা persisted/auto-restored session থাকলে
     // সেটা এই ডিভাইসেরই কিনা যাচাই করা — নাহলে জোর করে সাইন-আউট
     final existingUser = _client.auth.currentUser;
     if (existingUser != null) {
-      try {
-        final deviceId = await _getOrCreateDeviceId();
-        final profileData = await _client
-            .from('profiles')
-            .select()
-            .eq('id', existingUser.id)
-            .maybeSingle();
+      // ✅ FIX: internet check age kore nao — offline thakle DB call na kore
+      // shorashori cached profile diyei app cholte dao. Nahole timeout er
+      // jonno app boot hote onek deri hobe (offline e stuck thakbe).
+      final netAvailable = await _hasInternet();
+      if (!netAvailable) {
+        _log('Auto-restore SKIPPED: no internet, using cached profile.');
+      } else {
+        try {
+          final deviceId = await _getOrCreateDeviceId();
+          final profileData = await _client
+              .from('profiles')
+              .select()
+              .eq('id', existingUser.id)
+              .maybeSingle()
+              .timeout(const Duration(seconds: 8));
 
-        final serverSessionId = profileData?['active_session_id']?.toString();
+          final serverSessionId = profileData?['active_session_id']?.toString();
 
-        if (profileData == null ||
-            profileData['is_active'] == false ||
-            (serverSessionId != null && serverSessionId.isNotEmpty && serverSessionId != deviceId)) {
-          print('Auto-restore REJECTED: session mismatch or inactive. Forcing sign out.');
-          await _client.auth.signOut();
-          currentUserProfileNotifier.value = null;
-          await _clearAuthDataOnly();
-        } else {
-          print('Auto-restore ACCEPTED: session matches this device.');
-          currentUserProfileNotifier.value = profileData;
-          await saveProfileLocally(profileData);
+          if (profileData == null ||
+              profileData['is_active'] == false ||
+              (serverSessionId != null && serverSessionId.isNotEmpty && serverSessionId != deviceId)) {
+            _log('Auto-restore REJECTED: session mismatch or inactive. Forcing sign out.');
+            await _client.auth.signOut();
+            currentUserProfileNotifier.value = null;
+            await _clearAuthDataOnly();
+          } else {
+            _log('Auto-restore ACCEPTED: session matches this device.');
+            currentUserProfileNotifier.value = profileData;
+            await saveProfileLocally(profileData);
+          }
+        } catch (e) {
+          // Server check fail (timeout/network) hole cached profile diyei
+          // cholte dao — jorpurbok logout kore dio na.
+          _log('Auto-restore check failed (keeping cached profile): $e');
         }
-      } catch (e) {
-        print('Auto-restore check failed: $e');
       }
     }
 
@@ -129,8 +149,6 @@ class DatabaseService {
   }
 
   // Boot-time based tampering check.
-  // Compares how much wall-clock time passed vs how much elapsed-realtime
-  // passed since the last sync. Large mismatch => user changed the date/time.
   Future<void> _checkBootTimeTampering(SharedPreferences prefs) async {
     try {
       final syncWallStr = prefs.getString('sync_wall_time');
@@ -146,17 +164,15 @@ class DatabaseService {
 
         // 5 minute tolerance for normal clock drift / NTP adjustments
         if ((wallDiffSec - elapsedDiffSec).abs() > 300) {
-          print("ALERT: Boot-time mismatch detected, possible clock tampering.");
+          _log("ALERT: Boot-time mismatch detected, possible clock tampering.");
           await prefs.setBool('is_clock_tampered', true);
         }
       }
 
-      // Always refresh the reference point for next check
       await prefs.setString('sync_wall_time', nowWall.toIso8601String());
       await prefs.setInt('sync_elapsed_ms', nowElapsedMs);
     } catch (e) {
-      // system_clock unavailable (e.g. some platforms) — skip silently
-      print('Boot-time check skipped: $e');
+      _log('Boot-time check skipped: $e');
     }
   }
 
@@ -190,7 +206,6 @@ class DatabaseService {
   }
 
   // ── Effective access/paid calculation (single source of truth) ──
-  // is_active = master switch. Trial (free user) OR Paid subscription grants access.
   bool hasAccess(Map<String, dynamic> profile) {
     if (profile['is_active'] != true) return false;
 
@@ -214,18 +229,14 @@ class DatabaseService {
     return isPaidValid || hasValidExpiry;
   }
 
-  // দিন হিসেবে কত দিন বাকি আছে (পুরনো callers এর জন্য রাখা হয়েছে)
-  // নতুন UI তে timeRemaining()/timeRemainingText() ব্যবহার করুন।
   int? daysRemaining(Map<String, dynamic> profile) {
     final remaining = timeRemaining(profile);
     return remaining?.inDays;
   }
 
-  // Exact Duration বাকি আছে (trial first, then paid subscription)। null মানে কিছু track করার নাই।
   Duration? timeRemaining(Map<String, dynamic> profile) {
     final now = DateTime.now().toUtc();
 
-    // 1. Trial check (free user)
     final trialExpiry = profile['trial_ends_at'] != null
         ? DateTime.tryParse(profile['trial_ends_at'].toString())?.toUtc()
         : null;
@@ -233,7 +244,6 @@ class DatabaseService {
       return trialExpiry.difference(now);
     }
 
-    // 2. Paid subscription check
     final paidExpiry = profile['subscription_expires_at'] != null
         ? DateTime.tryParse(profile['subscription_expires_at'].toString())?.toUtc()
         : null;
@@ -246,7 +256,6 @@ class DatabaseService {
       }
     }
 
-    // subscription_expires_at সেট থাকলেও remaining time দেখাও (is_paid true না হলেও)
     if (paidExpiry != null && now.isBefore(paidExpiry)) {
       return paidExpiry.difference(now);
     }
@@ -254,7 +263,6 @@ class DatabaseService {
     return null;
   }
 
-  // মানুষের পড়ার মতো টেক্সট — বেশি সময় বাকি থাকলে দিন, কম থাকলে ঘণ্টা/মিনিট দেখায়
   String? timeRemainingText(Map<String, dynamic> profile) {
     final remaining = timeRemaining(profile);
     if (remaining == null) return null;
@@ -281,8 +289,6 @@ class DatabaseService {
     return remaining.inSeconds >= 0 && remaining.inDays <= reminderDaysBefore;
   }
 
-  // ── Reminder banner dismiss (per calendar day) ──
-  // User (X) চেপে বন্ধ করলে সেই দিনের জন্য আর দেখাবে না; পরদিন আবার দেখাবে।
   Future<void> dismissReminderForToday() async {
     final prefs = await SharedPreferences.getInstance();
     final todayKey = DateTime.now().toUtc().toIso8601String().split('T').first;
@@ -316,18 +322,25 @@ class DatabaseService {
     }
 
     try {
+      // ✅ FIX: internet age check kore proper error dao, nahole
+      // network call nijei onek deri kore timeout hobe.
+      if (!await _hasInternet()) {
+        throw Exception('ইন্টারনেট সংযোগ নেই! অনুগ্রহ করে নেট চালু করে আবার চেষ্টা করুন।');
+      }
+
       final email = _formatEmail(emailOrPhone);
       final response = await _client.auth.signInWithPassword(
         email: email,
         password: password,
-      );
+      ).timeout(const Duration(seconds: 15));
 
       if (response.user != null) {
         final profileData = await _client
             .from('profiles')
             .select()
             .eq('id', response.user!.id)
-            .maybeSingle();
+            .maybeSingle()
+            .timeout(const Duration(seconds: 10));
 
         if (profileData != null) {
           if (profileData['is_active'] == false) {
@@ -349,7 +362,7 @@ class DatabaseService {
           // ── Session Lock: check if another device is already active ──
           final existingSession = profileData['active_session_id']?.toString();
           if (existingSession != null && existingSession != deviceId) {
-            print('Session Lock: REJECTED - another device active ($existingSession)');
+            _log('Session Lock: REJECTED - another device active ($existingSession)');
             await _client.auth.signOut();
             throw Exception('device_active_elsewhere');
           }
@@ -359,27 +372,32 @@ class DatabaseService {
               .rpc('set_active_session', params: {
                 'p_user_id': response.user!.id,
                 'p_device_id': deviceId,
-              });
+              })
+              .timeout(const Duration(seconds: 10));
 
-          print('Session Lock: rpc result=$sessionGranted, myDeviceId=$deviceId');
+          _log('Session Lock: rpc result=$sessionGranted, myDeviceId=$deviceId');
 
           if (sessionGranted != true) {
-            print('Session Lock: REJECTED - another device active');
+            _log('Session Lock: REJECTED - another device active');
             await _client.auth.signOut();
             throw Exception('device_active_elsewhere');
           }
 
-          print('Session Lock: GRANTED - active_session_id set to $deviceId');
+          _log('Session Lock: GRANTED - active_session_id set to $deviceId');
           profileData['active_session_id'] = deviceId;
 
           currentUserProfileNotifier.value = profileData;
           await saveProfileLocally(profileData);
+
+          // ── Known Device ID: forget password er jonno ──
+          await _saveKnownDeviceId(response.user!.id);
+
           startSessionMonitoring();
           return profileData;
         }
       }
     } catch (e) {
-      print('Auth Error: $e');
+      _log('Auth Error: $e');
       rethrow;
     }
     return null;
@@ -410,11 +428,15 @@ class DatabaseService {
     }
 
     try {
+      if (!await _hasInternet()) {
+        throw Exception('ইন্টারনেট সংযোগ নেই! অনুগ্রহ করে নেট চালু করে আবার চেষ্টা করুন।');
+      }
+
       final email = _formatEmail(emailOrPhone);
       final authResponse = await _client.auth.signUp(
         email: email,
         password: password,
-      );
+      ).timeout(const Duration(seconds: 15));
 
       if (authResponse.user != null) {
         final deviceId = await _getOrCreateDeviceId();
@@ -428,30 +450,41 @@ class DatabaseService {
           'trial_ends_at': trialEndsAt,
         };
 
-        await _client.from('profiles').insert(profileMap);
-        // Prothom device ke active session set (RPC diye atomic)
+        await _client.from('profiles').insert(profileMap).timeout(const Duration(seconds: 10));
+
         try {
           await _client.rpc('set_active_session', params: {
             'p_user_id': authResponse.user!.id,
             'p_device_id': deviceId,
-          });
-          print('SignUp: active_session_id set to $deviceId');
+          }).timeout(const Duration(seconds: 10));
+          _log('SignUp: active_session_id set to $deviceId');
         } catch (e) {
-          print('SignUp: FAILED to set active_session_id! Error: $e');
+          _log('SignUp: FAILED to set active_session_id! Error: $e');
         }
         profileMap['active_session_id'] = deviceId;
 
         currentUserProfileNotifier.value = profileMap;
         await saveProfileLocally(profileMap);
+
+        // ── Known Device ID: forget password er jonno ──
+        await _saveKnownDeviceId(authResponse.user!.id);
+
         startSessionMonitoring();
         return profileMap;
       }
     } catch (e) {
-      print('SignUp Error: $e');
+      _log('SignUp Error: $e');
       rethrow;
     }
     return null;
   }
+
+  // ── Data notifiers ──
+  final ValueNotifier<List<ThaiColorSet>> thaiColorSetsNotifier = ValueNotifier([]);
+  final ValueNotifier<List<GlassBrand>> glassBrandsNotifier = ValueNotifier([]);
+  final ValueNotifier<List<HardwarePrice>> hardwarePricesNotifier = ValueNotifier([]);
+  final ValueNotifier<Map<String, dynamic>?> appConfigNotifier = ValueNotifier(null);
+  final ValueNotifier<Map<String, dynamic>?> messageNotifier = ValueNotifier(null);
 
   Timer? _sessionTimer;
   RealtimeChannel? _sessionChannel;
@@ -538,10 +571,10 @@ class DatabaseService {
           await _client.from('profiles').update({
             'active_session_id': null,
           }).eq('id', userId);
-          print('Logout: active_session_id cleared for $userId');
+          _log('Logout: active_session_id cleared for $userId');
         }
       } catch (e) {
-        print('Logout: FAILED to clear active_session_id. Error: $e');
+        _log('Logout: FAILED to clear active_session_id. Error: $e');
       }
     }
     currentUserProfileNotifier.value = null;
@@ -553,12 +586,122 @@ class DatabaseService {
     }
   }
 
-  // ── শুধু Auth-Related Keys মুছবে (invoices, cache, pic রাখবে) ──
+  // ── Known Device ID: Forget Password er jonno ──
+  Future<void> _saveKnownDeviceId(String userId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      String? knownId = prefs.getString('known_device_id');
+      if (knownId == null) {
+        knownId = const Uuid().v4();
+        await prefs.setString('known_device_id', knownId);
+      }
+
+      if (!isFallbackMode) {
+        await _client
+            .from('profiles')
+            .update({'known_device_id': knownId})
+            .eq('id', userId)
+            .timeout(const Duration(seconds: 10));
+      }
+      _log('Known Device ID saved: $knownId');
+    } catch (e) {
+      _log('Failed to save known_device_id: $e');
+    }
+  }
+
+  // ── Forget Password: input diye account + device verify ──
+  // Returns: { 'found': true/false, 'matched': true/false }
+  Future<Map<String, bool>> forgotPasswordVerify(String phoneOrEmail) async {
+    if (isFallbackMode) {
+      throw Exception('ডেমো মোডে পাসওয়ার্ড রিসেট সম্ভব নয়');
+    }
+    if (!await _hasInternet()) {
+      throw Exception('ইন্টারনেট সংযোগ নেই!');
+    }
+
+    final cleanInput = phoneOrEmail.trim().replaceAll(RegExp(r'\D'), '');
+    final rawInput = phoneOrEmail.trim();
+
+    final profile = cleanInput.isEmpty
+        ? await _client
+            .from('profiles')
+            .select('id, known_device_id')
+            .eq('phone_email', rawInput)
+            .maybeSingle()
+            .timeout(const Duration(seconds: 10))
+        : await _client
+            .from('profiles')
+            .select('id, known_device_id')
+            .or('phone_email.eq.$rawInput,phone_email.eq.$cleanInput')
+            .maybeSingle()
+            .timeout(const Duration(seconds: 10));
+
+    if (profile == null) {
+      return {'found': false, 'matched': false};
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final localId = prefs.getString('known_device_id');
+
+    final dbDeviceId = profile['known_device_id']?.toString();
+    final isMatched = dbDeviceId != null &&
+        localId != null &&
+        dbDeviceId == localId;
+
+    return {'found': true, 'matched': isMatched};
+  }
+
+  // ── Forget Password: notun password set (RPC diye, bina login er) ──
+  Future<void> resetPassword(String phoneOrEmail, String newPassword) async {
+    if (isFallbackMode) {
+      throw Exception('ডেমো মোডে পাসওয়ার্ড রিসেট সম্ভব নয়');
+    }
+    if (!await _hasInternet()) {
+      throw Exception('ইন্টারনেট সংযোগ নেই!');
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final knownDeviceId = prefs.getString('known_device_id');
+
+    if (knownDeviceId == null) {
+      throw Exception('ডিভাইস চেনা যায়নি। অ্যাডমিনের সাথে যোগাযোগ করুন।');
+    }
+
+    final cleanInput = phoneOrEmail.trim().replaceAll(RegExp(r'\D'), '');
+    final normalizedPhone = cleanInput.isNotEmpty ? cleanInput : phoneOrEmail.trim();
+
+    try {
+      final result = await _client
+          .rpc('reset_password_by_device', params: {
+            'p_phone_email': normalizedPhone,
+            'p_new_password': newPassword,
+            'p_known_device_id': knownDeviceId,
+          })
+          .timeout(const Duration(seconds: 15));
+
+      final success = result is Map && result['success'] == true;
+
+      if (!success) {
+        final msg = (result is Map && result['message'] != null)
+            ? result['message'].toString()
+            : 'পাসওয়ার্ড পরিবর্তন ব্যর্থ হয়েছে।';
+        throw Exception(msg);
+      }
+    } catch (e) {
+      if (e is Exception && (e.toString().contains('ব্যর্থ') || e.toString().contains('মিলেনি') || e.toString().contains('মিলছে'))) {
+        rethrow;
+      }
+      throw Exception('সার্ভার ত্রুটি: ${e.toString()}');
+    }
+  }
+
+  // ── শুধু Auth-Related Keys মুছবে (cached_phone_email RAKHBI - forgot password er jonno) ──
   Future<void> _clearAuthDataOnly() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('cached_uid');
     await prefs.remove('cached_name');
-    await prefs.remove('cached_phone_email');
+    // cached_phone_email MUCHBO NA — forgot password e lagbe
     await prefs.remove('is_active');
     await prefs.remove('is_paid');
     await prefs.remove('subscription_expires_at');
@@ -593,11 +736,10 @@ class DatabaseService {
 
     await prefs.setString('last_online_check', DateTime.now().toUtc().toIso8601String());
     await prefs.setString('last_known_time', DateTime.now().toUtc().toIso8601String());
-    await prefs.setBool('is_clock_tampered', false); // Reset tampered flag on a fresh online sync
+    await prefs.setBool('is_clock_tampered', false);
   }
 
   // Offline Verification Check logic
-  // Returns a map with 'status' (bool) and 'reason' (string)
   Future<Map<String, dynamic>> checkOfflineSubscription() async {
     final prefs = await SharedPreferences.getInstance();
 
@@ -607,7 +749,6 @@ class DatabaseService {
 
     final now = DateTime.now().toUtc();
 
-    // 1. Wall-clock rollback check
     final lastKnownStr = prefs.getString('last_known_time');
     if (lastKnownStr != null) {
       final lastKnown = DateTime.tryParse(lastKnownStr);
@@ -618,19 +759,16 @@ class DatabaseService {
     }
     await prefs.setString('last_known_time', now.toIso8601String());
 
-    // 1b. Boot-time based check (catches date changes that stay "ahead")
     await _checkBootTimeTampering(prefs);
     if (prefs.getBool('is_clock_tampered') == true) {
       return {'status': false, 'reason': 'tampered'};
     }
 
-    // 2. is_active gate
     final isActive = prefs.getBool('is_active') ?? true;
     if (!isActive) {
       return {'status': false, 'reason': 'blocked'};
     }
 
-    // 3. Effective access (paid OR trial)
     final profile = {
       'is_active': isActive,
       'is_paid': prefs.getBool('is_paid') ?? false,
@@ -639,14 +777,9 @@ class DatabaseService {
     };
 
     if (!hasAccess(profile)) {
-      // Local cache sync so UI/logic downstream reflects reality
-      if (prefs.getBool('is_paid') == true) {
-        await prefs.setBool('is_paid', false);
-      }
       return {'status': false, 'reason': 'expired'};
     }
 
-    // 4. 3 Days Offline Refresh Check
     final lastCheckStr = prefs.getString('last_online_check');
     if (lastCheckStr != null) {
       final lastCheck = DateTime.tryParse(lastCheckStr);
@@ -661,14 +794,13 @@ class DatabaseService {
     return {'status': true, 'reason': 'active'};
   }
 
-  // Expire হয়ে গেলে DB তে is_paid = false লিখে দেয় (source of truth clean রাখতে)
   Future<void> _syncExpiredPaidStatus(Map<String, dynamic> profileData) async {
     if (profileData['is_paid'] != true) return;
     final expiry = profileData['subscription_expires_at'] != null
         ? DateTime.tryParse(profileData['subscription_expires_at'].toString())?.toUtc()
         : null;
-    if (expiry == null) return; // If expiry is null, it's unlimited. Do not auto-expire!
-    
+    if (expiry == null) return;
+
     final expired = DateTime.now().toUtc().isAfter(expiry);
     if (expired) {
       try {
@@ -678,7 +810,7 @@ class DatabaseService {
             .eq('id', profileData['id']);
         profileData['is_paid'] = false;
       } catch (e) {
-        print('Failed to sync expired is_paid to DB: $e');
+        _log('Failed to sync expired is_paid to DB: $e');
       }
     }
   }
@@ -688,34 +820,50 @@ class DatabaseService {
     if (isFallbackMode) {
       return {'is_active': true, 'is_paid': true};
     }
+
+    // ✅ FIX: internet age check kora — offline hole DB call e 10s
+    // timeout wait na kore shorashori cached data return korbe.
+    final netAvailable = await _hasInternet();
+    if (!netAvailable) {
+      final prefs = await SharedPreferences.getInstance();
+      final cachedProfile = {
+        'is_active': prefs.getBool('is_active') ?? true,
+        'is_paid': prefs.getBool('is_paid') ?? false,
+        'subscription_expires_at': prefs.getString('subscription_expires_at'),
+        'trial_ends_at': prefs.getString('trial_ends_at'),
+      };
+      return {
+        ...cachedProfile,
+        'has_access': hasAccess(cachedProfile),
+        'days_remaining': daysRemaining(cachedProfile),
+      };
+    }
+
     try {
       final userId = _client.auth.currentUser?.id;
-if (userId == null) {
-  // ✅ FIX: currentUser null মানে logout না
-  // Supabase session expire বা initialize এ clear হতে পারে
-  // এক্ষেত্রে cached local data দিয়ে চালিয়ে যাব
-  final prefs = await SharedPreferences.getInstance();
-  final cachedProfile = {
-    'is_active': prefs.getBool('is_active') ?? true,
-    'is_paid': prefs.getBool('is_paid') ?? false,
-    'subscription_expires_at': prefs.getString('subscription_expires_at'),
-    'trial_ends_at': prefs.getString('trial_ends_at'),
-  };
-  return {
-    ...cachedProfile,
-    'has_access': hasAccess(cachedProfile),
-    'days_remaining': daysRemaining(cachedProfile),
-  };
-}
+      if (userId == null) {
+        final prefs = await SharedPreferences.getInstance();
+        final cachedProfile = {
+          'is_active': prefs.getBool('is_active') ?? true,
+          'is_paid': prefs.getBool('is_paid') ?? false,
+          'subscription_expires_at': prefs.getString('subscription_expires_at'),
+          'trial_ends_at': prefs.getString('trial_ends_at'),
+        };
+        return {
+          ...cachedProfile,
+          'has_access': hasAccess(cachedProfile),
+          'days_remaining': daysRemaining(cachedProfile),
+        };
+      }
 
       final profileData = await _client
           .from('profiles')
           .select()
           .eq('id', userId)
-          .maybeSingle();
+          .maybeSingle()
+          .timeout(const Duration(seconds: 10));
 
       if (profileData != null) {
-        // Expire হয়ে থাকলে DB তে is_paid সত্যি করে false করে দেওয়া
         await _syncExpiredPaidStatus(profileData);
 
         currentUserProfileNotifier.value = profileData;
@@ -730,9 +878,8 @@ if (userId == null) {
         };
       }
     } catch (e) {
-      print('Online check failed (likely offline): $e');
+      _log('Online check failed (likely offline): $e');
     }
-    // Return last cached state if online query failed
     final prefs = await SharedPreferences.getInstance();
     final cachedProfile = {
       'is_active': prefs.getBool('is_active') ?? true,
@@ -755,7 +902,7 @@ if (userId == null) {
       return _mockThaiColorSets;
     }
     if (!await _hasInternet()) {
-      print('No internet detected. Loading thai_color_sets from local cache directly.');
+      _log('No internet detected. Loading thai_color_sets from local cache directly.');
       final cached = prefs.getString('cached_thai_color_sets');
       if (cached != null) {
         try {
@@ -776,7 +923,7 @@ if (userId == null) {
       await prefs.setString('cached_thai_color_sets', jsonEncode(data));
       return data.map((json) => ThaiColorSet.fromJson(json)).toList();
     } catch (e) {
-      print('Error fetching thai_color_sets from Supabase: $e. Loading from local cache.');
+      _log('Error fetching thai_color_sets from Supabase: $e. Loading from local cache.');
       final cached = prefs.getString('cached_thai_color_sets');
       if (cached != null) {
         try {
@@ -796,7 +943,7 @@ if (userId == null) {
       return _mockGlassBrands;
     }
     if (!await _hasInternet()) {
-      print('No internet detected. Loading GlassBrand from local cache directly.');
+      _log('No internet detected. Loading GlassBrand from local cache directly.');
       final cached = prefs.getString('cached_glass_brands');
       if (cached != null) {
         try {
@@ -817,7 +964,7 @@ if (userId == null) {
       await prefs.setString('cached_glass_brands', jsonEncode(data));
       return data.map((json) => GlassBrand.fromJson(json)).toList();
     } catch (e) {
-      print('Error fetching glass_brands from Supabase: $e. Loading from local cache.');
+      _log('Error fetching glass_brands from Supabase: $e. Loading from local cache.');
       final cached = prefs.getString('cached_glass_brands');
       if (cached != null) {
         try {
@@ -837,7 +984,7 @@ if (userId == null) {
       return _mockHardwarePrices;
     }
     if (!await _hasInternet()) {
-      print('No internet detected. Loading thai_color_sets from local cache directly.');
+      _log('No internet detected. Loading thai_color_sets from local cache directly.');
       final cached = prefs.getString('cached_hardware_prices');
       if (cached != null) {
         try {
@@ -857,7 +1004,7 @@ if (userId == null) {
       await prefs.setString('cached_hardware_prices', jsonEncode(data));
       return data.map((json) => HardwarePrice.fromJson(json)).toList();
     } catch (e) {
-      print('Error fetching hardware_prices from Supabase: $e. Loading from local cache.');
+      _log('Error fetching hardware_prices from Supabase: $e. Loading from local cache.');
       final cached = prefs.getString('cached_hardware_prices');
       if (cached != null) {
         try {
@@ -889,10 +1036,10 @@ if (userId == null) {
           final dbInvoice = Map<String, dynamic>.from(invoice);
           dbInvoice['user_id'] = userId;
           await _client.from('invoices').insert(dbInvoice);
-          print('Supabase: Saved invoice successfully.');
+          _log('Supabase: Saved invoice successfully.');
         }
       } catch (e) {
-        print('Supabase: Invoice sync failed (offline or schema mismatch): $e');
+        _log('Supabase: Invoice sync failed (offline or schema mismatch): $e');
       }
     }
   }
@@ -905,46 +1052,44 @@ if (userId == null) {
       final List<dynamic> decoded = jsonDecode(listStr);
       return decoded.map((item) => Map<String, dynamic>.from(item)).toList();
     } catch (e) {
-      print('Error decoding saved invoices: $e');
+      _log('Error decoding saved invoices: $e');
       return [];
     }
   }
 
   Future<void> deleteInvoice(int index) async {
-  final prefs = await SharedPreferences.getInstance();
-  final listStr = prefs.getString('saved_invoices');
-  if (listStr == null) return;
-  try {
-    final List<dynamic> invoices = jsonDecode(listStr) as List<dynamic>;
-    if (index < 0 || index >= invoices.length) return;
-    invoices.removeAt(index);
-    await prefs.setString('saved_invoices', jsonEncode(invoices));
-  } catch (e) {
-    print('Error deleting invoice: $e');
+    final prefs = await SharedPreferences.getInstance();
+    final listStr = prefs.getString('saved_invoices');
+    if (listStr == null) return;
+    try {
+      final List<dynamic> invoices = jsonDecode(listStr) as List<dynamic>;
+      if (index < 0 || index >= invoices.length) return;
+      invoices.removeAt(index);
+      await prefs.setString('saved_invoices', jsonEncode(invoices));
+    } catch (e) {
+      _log('Error deleting invoice: $e');
+    }
   }
-}
 
   // ── App Update Check ──
-  // app_config table (Supabase) দেখে বলে দেয় নতুন version আছে কিনা, আর force করতে হবে কিনা।
-  // Internet না থাকলে null return করে (silently skip)।
   Future<Map<String, dynamic>?> checkForUpdate() async {
-    print('UPDATE CHECK: Starting...');
-    print('UPDATE CHECK: isFallbackMode = $isFallbackMode');
+    _log('UPDATE CHECK: Starting...');
+    _log('UPDATE CHECK: isFallbackMode = $isFallbackMode');
     if (isFallbackMode) {
-      print('UPDATE CHECK: Skipped - fallback mode');
+      _log('UPDATE CHECK: Skipped - fallback mode');
       return null;
     }
     final hasNet = await _hasInternet();
-    print('UPDATE CHECK: hasInternet = $hasNet');
+    _log('UPDATE CHECK: hasInternet = $hasNet');
     if (!hasNet) {
-      print('UPDATE CHECK: Skipped - no internet');
+      _log('UPDATE CHECK: Skipped - no internet');
       return null;
     }
 
     try {
       final packageInfo = await PackageInfo.fromPlatform();
       final currentVersion = packageInfo.version;
-      print('UPDATE CHECK: currentVersion = $currentVersion');
+      _log('UPDATE CHECK: currentVersion = $currentVersion');
 
       final config = await _client
           .from('app_config')
@@ -953,19 +1098,19 @@ if (userId == null) {
           .maybeSingle()
           .timeout(const Duration(seconds: 4));
 
-      print('UPDATE CHECK: config from DB = $config');
+      _log('UPDATE CHECK: config from DB = $config');
 
       if (config == null) {
-        print('UPDATE CHECK: config is NULL - row id=1 not found');
+        _log('UPDATE CHECK: config is NULL - row id=1 not found');
         return null;
       }
 
       final latestVersion = config['latest_version']?.toString();
-      print('UPDATE CHECK: latestVersion = $latestVersion');
+      _log('UPDATE CHECK: latestVersion = $latestVersion');
       if (latestVersion == null) return null;
 
       final updateAvailable = _isNewerVersion(latestVersion, currentVersion);
-      print('UPDATE CHECK: updateAvailable = $updateAvailable ($latestVersion vs $currentVersion)');
+      _log('UPDATE CHECK: updateAvailable = $updateAvailable ($latestVersion vs $currentVersion)');
       if (!updateAvailable) return null;
 
       final result = {
@@ -976,10 +1121,10 @@ if (userId == null) {
         'force_update': config['force_update'] == true,
         'release_notes': config['release_notes']?.toString(),
       };
-      print('UPDATE CHECK: returning update info = $result');
+      _log('UPDATE CHECK: returning update info = $result');
       return result;
     } catch (e) {
-      print('UPDATE CHECK FAILED: $e');
+      _log('UPDATE CHECK FAILED: $e');
       return null;
     }
   }
@@ -1000,7 +1145,6 @@ if (userId == null) {
     return DateTime.now().difference(lastCheckTime).inDays >= intervalDays;
   }
 
-  // Simple semantic version compare: "1.2.0" vs "1.10.0" ইত্যাদি ঠিকভাবে handle করে
   bool _isNewerVersion(String latest, String current) {
     final latestParts = latest.split('.').map((p) => int.tryParse(p) ?? 0).toList();
     final currentParts = current.split('.').map((p) => int.tryParse(p) ?? 0).toList();
@@ -1034,7 +1178,6 @@ if (userId == null) {
   }
 
   // ── Message Check (Supabase `messages` table) ──
-  // দিনে একবার check করে, নতুন message থাকলে return করে।
   static const String _lastMessageCheckKey = 'last_message_check_timestamp';
   static const String _lastSeenMessageIdKey = 'last_seen_message_id';
 
@@ -1057,7 +1200,6 @@ if (userId == null) {
 
       if (message == null) return null;
 
-      // এই message ইতিমধ্যে দেখা হয়েছে কিনা check
       if (message['id'] == lastSeenId) return null;
 
       return message;
