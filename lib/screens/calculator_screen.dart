@@ -1171,7 +1171,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       _buildCard(
         borderColor: cAccent.withOpacity(0.3),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          _buildHeading("💰 অ্যালুমিনিয়াম সার / ছাড়"),
+          _buildHeading("💰 অ্যালুমিনিয়াম ছাড়"),
           const SizedBox(height: 12),
           _buildTextInput(controller: _aluDiscountController, label: "ছাড় (%)", isNumber: true, onChanged: (v) => setState(() {})),
           const SizedBox(height: 10),
