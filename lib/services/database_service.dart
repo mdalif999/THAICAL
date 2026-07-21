@@ -145,6 +145,7 @@ class DatabaseService {
 
     if (currentUserProfile != null) {
       startSessionMonitoring();
+      startHeartbeat();
     }
   }
 
@@ -393,6 +394,7 @@ class DatabaseService {
           await _saveKnownDeviceId(response.user!.id);
 
           startSessionMonitoring();
+          startHeartbeat();
           return profileData;
         }
       }
@@ -470,6 +472,7 @@ class DatabaseService {
         await _saveKnownDeviceId(authResponse.user!.id);
 
         startSessionMonitoring();
+        startHeartbeat();
         return profileMap;
       }
     } catch (e) {
@@ -488,6 +491,7 @@ class DatabaseService {
 
   Timer? _sessionTimer;
   RealtimeChannel? _sessionChannel;
+  Timer? _heartbeatTimer;
 
   void startSessionMonitoring() {
     // ✅ আগে থেকে কোনো channel থাকলে সেটা আগে unsubscribe করো
@@ -562,8 +566,39 @@ class DatabaseService {
     _sessionChannel = null;
   }
 
+  // ── Heartbeat: "কে অনলাইন" ফিচারের জন্য (last_active_at আপডেট) ──
+  void startHeartbeat() {
+    if (isFallbackMode) return;
+    _heartbeatTimer?.cancel();
+    _sendHeartbeat();
+    _heartbeatTimer = Timer.periodic(const Duration(minutes: 4), (_) {
+      _sendHeartbeat();
+    });
+  }
+
+  void stopHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+  }
+
+  Future<void> _sendHeartbeat() async {
+    if (isFallbackMode) return;
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return;
+    try {
+      await _client
+          .from('profiles')
+          .update({'last_active_at': DateTime.now().toUtc().toIso8601String()})
+          .eq('id', userId)
+          .timeout(const Duration(seconds: 5));
+    } catch (e) {
+      _log('Heartbeat failed: $e');
+    }
+  }
+
   Future<void> logout() async {
     stopSessionMonitoring();
+    stopHeartbeat();
     if (!isFallbackMode) {
       try {
         final userId = _client.auth.currentUser?.id;

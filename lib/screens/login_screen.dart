@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/database_service.dart';
 import 'update_dialog.dart';
 
@@ -169,6 +170,109 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       SnackBar(
         content: Text(message, style: GoogleFonts.hindSiliguri(color: Colors.white)),
         backgroundColor: cAccent2,
+      ),
+    );
+  }
+
+  void _showHelpSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: cCard,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(color: cBorder, borderRadius: BorderRadius.circular(2)),
+            ),
+            const SizedBox(height: 16),
+            Text("যোগাযোগ", style: GoogleFonts.hindSiliguri(color: cText, fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 6),
+            Text("কোনো সমস্যায় নিচের যেকোনো মাধ্যমে যোগাযোগ করুন",
+                style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 12)),
+            const SizedBox(height: 16),
+
+            // WhatsApp
+            ListTile(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              tileColor: const Color(0xFF12151F),
+              leading: const Icon(Icons.chat_rounded, color: Color(0xFF25D366)),
+              title: Text("WhatsApp-এ যোগাযোগ", style: GoogleFonts.hindSiliguri(color: cText)),
+              subtitle: Text("01710460274", style: GoogleFonts.inter(color: cMuted, fontSize: 11)),
+              onTap: () async {
+                final uri = Uri.parse("https://wa.me/8801710460274");
+                try {
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text("WhatsApp খুলতে পারা যায়নি।", style: GoogleFonts.hindSiliguri(color: Colors.white, fontSize: 13)),
+                        backgroundColor: cAccent2,
+                      ),
+                    );
+                  }
+                }
+              },
+            ),
+            const SizedBox(height: 8),
+
+            // Call 1
+            ListTile(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              tileColor: const Color(0xFF12151F),
+              leading: const Icon(Icons.call_rounded, color: cAccent),
+              title: Text("কল করুন (১)", style: GoogleFonts.hindSiliguri(color: cText)),
+              subtitle: Text("01305232039", style: GoogleFonts.inter(color: cMuted, fontSize: 11)),
+              onTap: () async {
+                final uri = Uri.parse("tel:+8801305232039");
+                try {
+                  await launchUrl(uri);
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text("ফোন ডায়ালার খুলতে পারা যায়নি।", style: GoogleFonts.hindSiliguri(color: Colors.white, fontSize: 13)),
+                        backgroundColor: cAccent2,
+                      ),
+                    );
+                  }
+                }
+              },
+            ),
+            const SizedBox(height: 8),
+
+            // Call 2
+            ListTile(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              tileColor: const Color(0xFF12151F),
+              leading: const Icon(Icons.call_rounded, color: cAccent),
+              title: Text("কল করুন (২)", style: GoogleFonts.hindSiliguri(color: cText)),
+              subtitle: Text("01787203830", style: GoogleFonts.inter(color: cMuted, fontSize: 11)),
+              onTap: () async {
+                final uri = Uri.parse("tel:+8801787203830");
+                try {
+                  await launchUrl(uri);
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text("ফোন ডায়ালার খুলতে পারা যায়নি।", style: GoogleFonts.hindSiliguri(color: Colors.white, fontSize: 13)),
+                        backgroundColor: cAccent2,
+                      ),
+                    );
+                  }
+                }
+              },
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
       ),
     );
   }
@@ -575,7 +679,30 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                       ],
                     ),
                   ),
-                  
+
+                  const SizedBox(height: 24),
+
+                  // ── Help / Contact ──
+                  OutlinedButton.icon(
+                    onPressed: _showHelpSheet,
+                    icon: const Icon(Icons.help_outline_rounded, size: 18),
+                    label: Text(
+                      "সাহায্য / যোগাযোগ",
+                      style: GoogleFonts.hindSiliguri(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: cAccent2,
+                      side: const BorderSide(color: cAccent2, width: 1.5),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+
                 ],
               ),
             ),
