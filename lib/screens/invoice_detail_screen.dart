@@ -1,10 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
+import '../models/window_calculation.dart';
 
-class InvoiceDetailScreen extends StatelessWidget {
+class InvoiceDetailScreen extends StatefulWidget {
   final Map<String, dynamic> invoice;
-  const InvoiceDetailScreen({super.key, required this.invoice});
+  final int? invoiceIndex;
+  const InvoiceDetailScreen({super.key, required this.invoice, this.invoiceIndex});
+
+  @override
+  State<InvoiceDetailScreen> createState() => _InvoiceDetailScreenState();
+}
+
+class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
+  late Map<String, dynamic> invoice;
+
+  @override
+  void initState() {
+    super.initState();
+    invoice = Map<String, dynamic>.from(widget.invoice);
+  }
 
   static const Color cBg = Color(0xFF0F1117);
   static const Color cCard = Color(0xFF1A1D27);
@@ -15,6 +32,7 @@ class InvoiceDetailScreen extends StatelessWidget {
   static const Color cMuted = Color(0xFF6B7280);
   static const Color cGreen = Color(0xFF22C55E);
   static const Color cYellow = Color(0xFFF59E0B);
+  static const Color cRed = Color(0xFFEF4444);
 
   String _fmtTk(num amount) => amount
       .toStringAsFixed(0)
@@ -23,7 +41,94 @@ class InvoiceDetailScreen extends StatelessWidget {
         (m) => '${m[1]},',
       );
 
-  double _inchToBars(double inch) => inch / 192.0;
+  Future<void> _addPayment() async {
+    final due = (invoice['due'] as num?)?.toDouble() ?? 0;
+    if (due <= 0) return;
+
+    final controller = TextEditingController();
+    final result = await showDialog<double>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: cCard,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: cBorder)),
+        title: Text("টাকা জমা দিন", style: GoogleFonts.hindSiliguri(color: cText, fontWeight: FontWeight.bold)),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text("বাকি: ৳${_fmtTk(due)}", style: GoogleFonts.hindSiliguri(color: cAccent2, fontSize: 16, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          TextField(
+            controller: controller,
+            keyboardType: TextInputType.number,
+            autofocus: true,
+            style: GoogleFonts.inter(color: cText, fontSize: 16),
+            decoration: InputDecoration(
+              labelText: "জমার টাকা (৳)",
+              labelStyle: GoogleFonts.hindSiliguri(color: cMuted),
+              enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: cBorder)),
+              focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: cAccent)),
+            ),
+          ),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text("বাতিল", style: GoogleFonts.hindSiliguri(color: cMuted))),
+          ElevatedButton(
+            onPressed: () {
+              final amount = double.tryParse(controller.text);
+              if (amount != null && amount > 0) {
+                Navigator.pop(ctx, amount);
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: cGreen),
+            child: Text("জমা দিন", style: GoogleFonts.hindSiliguri(color: cBg, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null && result > 0) {
+      final currentAdvance = (invoice['advance'] as num?)?.toDouble() ?? 0;
+      final total = (invoice['total'] as num?)?.toDouble() ?? 0;
+      final newAdvance = currentAdvance + result;
+      final newDue = total - newAdvance;
+
+      setState(() {
+        invoice['advance'] = newAdvance;
+        invoice['due'] = newDue;
+      });
+
+      await _saveInvoice();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("৳${_fmtTk(result)} জমা হয়েছে! বাকি: ৳${_fmtTk(newDue > 0 ? newDue : 0)}",
+                style: GoogleFonts.hindSiliguri(color: Colors.white)),
+            backgroundColor: cGreen,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _saveInvoice() async {
+    final prefs = await SharedPreferences.getInstance();
+    final listStr = prefs.getString('saved_invoices');
+    if (listStr == null) return;
+    try {
+      final List<dynamic> invoices = jsonDecode(listStr);
+      if (widget.invoiceIndex != null && widget.invoiceIndex! >= 0 && widget.invoiceIndex! < invoices.length) {
+        invoices[widget.invoiceIndex!] = invoice;
+        await prefs.setString('saved_invoices', jsonEncode(invoices));
+      }
+    } catch (e) {
+      print('Failed to save invoice: $e');
+    }
+  }
+
+  double _inchToBars(double inch) {
+    final specInches = WindowCalculation.calcSpecLengthInches(invoice['spec_length']?.toString());
+    return WindowCalculation.inchToBars(inch, specLengthInches: specInches);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -204,6 +309,11 @@ class InvoiceDetailScreen extends StatelessWidget {
                       const Divider(color: cBorder, height: 16),
                       _buildMoneyRow("মোট অ্যালুমিনিয়াম", (invoice['aluTotal'] as num?)?.toDouble() ?? 0,
                           isBold: true, color: cAccent),
+                      if ((invoice['aluDiscount'] as num?)?.toDouble() != null &&
+                          (invoice['aluDiscount'] as num?)!.toDouble() > 0)
+                        _buildMoneyRow("  ↳ ${(invoice['aluDiscount'] as num?)!.toInt()}% ছাড়",
+                            (invoice['aluTotalAfterDiscount'] as num?)?.toDouble() ?? 0,
+                            color: cMuted, size: 12),
                     ],
                   )),
                   const SizedBox(height: 12),
@@ -240,7 +350,7 @@ class InvoiceDetailScreen extends StatelessWidget {
                       Text("🧾 খরচের বিবরণ", style: GoogleFonts.hindSiliguri(color: cText, fontSize: 14, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 10),
                       if (invoice['aluTotal'] != null)
-                        _buildMoneyRow("🔩 অ্যালুমিনিয়াম বার", (invoice['aluTotal'] as num).toDouble()),
+                        _buildMoneyRow("🔩 অ্যালুমিনিয়াম বার", (invoice['aluTotalAfterDiscount'] as num?)?.toDouble() ?? (invoice['aluTotal'] as num).toDouble()),
                       if (invoice['glassTotal'] != null)
                         _buildMoneyRow(
                             invoice['glassRate'] != null
@@ -265,6 +375,31 @@ class InvoiceDetailScreen extends StatelessWidget {
                     ],
                   ),
                 ),
+                const SizedBox(height: 12),
+                if (!isPaid)
+                  ElevatedButton.icon(
+                    onPressed: _addPayment,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: cGreen,
+                      foregroundColor: cBg,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: const Icon(Icons.payment_rounded, size: 22),
+                    label: Text("বাকি জমা দিন", style: GoogleFonts.hindSiliguri(fontSize: 16, fontWeight: FontWeight.bold)),
+                  ),
+                if (isPaid)
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      color: cGreen.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: cGreen.withOpacity(0.3)),
+                    ),
+                    child: Center(
+                      child: Text("✓ সম্পূর্ণ পরিশোধিত", style: GoogleFonts.hindSiliguri(color: cGreen, fontSize: 16, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -342,7 +477,8 @@ class InvoiceDetailScreen extends StatelessWidget {
         final label = item[0] as String;
         final inch = (item[1] as num?)?.toDouble() ?? 0;
         final pricePerBar = (item[2] as num?)?.toInt() ?? 0;
-        final bars = inch / 192.0;
+        final specInches = WindowCalculation.calcSpecLengthInches(invoice['spec_length']?.toString());
+        final bars = inch / specInches;
         final totalCut = (bars * pricePerBar).round();
         if (inch > 0) {
           cutBuffer.writeln("  $label");
@@ -480,7 +616,7 @@ class InvoiceDetailScreen extends StatelessWidget {
         Expanded(flex: 3, child: Text(label, style: GoogleFonts.hindSiliguri(color: cText, fontSize: 12))),
         SizedBox(width: 50, child: Text("${inchVal.toStringAsFixed(0)}\"",
             style: GoogleFonts.inter(color: cMuted, fontSize: 11), textAlign: TextAlign.right)),
-        SizedBox(width: 50, child: Text("${bars.toStringAsFixed(1)}P",
+        SizedBox(width: 50, child: Text("${bars.toStringAsFixed(2)}P",
             style: GoogleFonts.inter(color: cAccent2, fontSize: 11, fontWeight: FontWeight.bold), textAlign: TextAlign.center)),
         SizedBox(width: 40, child: Text("৳$priceVal",
             style: GoogleFonts.inter(color: cMuted, fontSize: 11), textAlign: TextAlign.right)),

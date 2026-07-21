@@ -74,6 +74,8 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
 
   final _customerNameController = TextEditingController();
   final _customerPhoneController = TextEditingController();
+  final _aluDiscountController = TextEditingController(text: "0");
+  final Map<String, double> _customHwRates = {};
   bool _isSaving = false;
 
   @override
@@ -103,6 +105,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     _hwRateController.dispose();
     _customerNameController.dispose();
     _customerPhoneController.dispose();
+    _aluDiscountController.dispose();
     super.dispose();
   }
 
@@ -219,7 +222,30 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   int _calcAluTotal() => _getCalculation().calcAluTotal();
   double _calcHwTotal() => _getCalculation().calcHwTotal();
   double _calcSft(double w, double h, int qty) => WindowCalculation.calcSft(w, h, qty);
-  double _inchToBars(double inch) => WindowCalculation.inchToBars(inch);
+  double _inchToBars(double inch) {
+    final specInches = WindowCalculation.calcSpecLengthInches(_selectedThaiColorSet?.specLength);
+    return WindowCalculation.inchToBars(inch, specLengthInches: specInches);
+  }
+
+  int _calcAluDiscounted() {
+    final original = _calcAluTotal();
+    final discountPercent = double.tryParse(_aluDiscountController.text) ?? 0;
+    if (discountPercent <= 0 || discountPercent >= 100) return original;
+    return (original * (100 - discountPercent) / 100).round();
+  }
+
+  double _calcHwTotalCustom() {
+    final calc = _getCalculation();
+    final hwItems = calc.calcHardwareBreakdown();
+    double total = 0;
+    for (var item in hwItems) {
+      final name = item['name'] as String;
+      final qty = (item['qty'] as num).toInt();
+      final rate = _customHwRates[name] ?? (item['rate'] as num?)?.toDouble() ?? 0;
+      total += qty * rate;
+    }
+    return total;
+  }
 
   String _formatBar(double bar) {
     if (bar == bar.toInt()) {
@@ -341,19 +367,22 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       _advanceController.text = "0";
       _customerNameController.clear();
       _customerPhoneController.clear();
+      _aluDiscountController.text = "0";
+      _customHwRates.clear();
     });
   }
 
   Future<void> _shareWhatsApp() async {
     final calc = _getCalculation();
     double totalSft = calc.calcTotalSft();
-    int aluTotal = calc.calcAluTotal();
-    double hwTotal = calc.calcHwTotal();
+    int aluTotal = _calcAluDiscounted();
+    int aluOriginal = calc.calcAluTotal();
+    double hwTotal = _calcHwTotalCustom();
     double glassTotal = calc.calcGlassTotal();
     double labor = calc.labor;
     double advance = calc.advance;
-    double grandTotal = calc.calcGrandTotal();
-    double due = calc.calcDue();
+    double grandTotal = aluTotal.toDouble() + glassTotal + hwTotal + labor;
+    double due = grandTotal - advance;
     final hwItems = calc.calcHardwareBreakdown();
 
     final name = _customerNameController.text.trim();
@@ -393,8 +422,11 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     hwBuffer.writeln("হার্ডওয়্যার হিসাব:");
     hwBuffer.writeln("--------------------");
     for (var item in hwItems) {
-      final cost = item['cost'] as double;
-      hwBuffer.writeln("  ${item['name']} — ${item['qty']} ${item['unit']} × ৳${_fmtTk((item['rate'] as double))} = ৳${_fmtTk(cost)}");
+      final name = item['name'] as String;
+      final qty = (item['qty'] as num).toInt();
+      final rate = _customHwRates[name] ?? (item['rate'] as num?)?.toDouble() ?? 0;
+      final cost = qty * rate;
+      hwBuffer.writeln("  $name — $qty ${item['unit']} × ৳${_fmtTk(rate)} = ৳${_fmtTk(cost)}");
     }
     hwBuffer.writeln("  -------------------");
     hwBuffer.writeln("  হার্ডওয়্যার মোট: ৳${_fmtTk(hwTotal)}");
@@ -427,7 +459,8 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         final label = item[0] as String;
         final inch = (item[1] as num?)?.toDouble() ?? 0;
         final pricePerBar = (item[2] as num?)?.toInt() ?? 0;
-        final bars = inch / 192.0;
+        final specInches = WindowCalculation.calcSpecLengthInches(_selectedThaiColorSet?.specLength);
+        final bars = inch / specInches;
         final total = (bars * pricePerBar).round();
         if (inch > 0) {
           cutBuffer.writeln("  $label");
@@ -466,6 +499,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         "${glassBuffer}"
         "${hwBuffer}"
         "মজুরি/ফিটিং: ৳${_fmtTk(labor)}\n"
+        "${aluOriginal != aluTotal ? "অ্যালুমিনিয়াম ছাড় (${_aluDiscountController.text}%): ৳${_fmtTk((aluOriginal - aluTotal).toDouble())}\n" : ""}"
         "\n"
         "====================================\n"
         "*সর্বমোট বিল: ৳${_fmtTk(grandTotal)}*\n"
@@ -511,6 +545,17 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     try {
       final calc = _getCalculation();
       final hwItems = calc.calcHardwareBreakdown();
+      for (var item in hwItems) {
+        final name = item['name'] as String;
+        if (_customHwRates.containsKey(name)) {
+          item['rate'] = _customHwRates[name];
+          item['cost'] = (item['qty'] as int) * _customHwRates[name]!;
+        }
+      }
+      final aluOrig = calc.calcAluTotal();
+      final aluDisc = _calcAluDiscounted();
+      final discountPct = double.tryParse(_aluDiscountController.text) ?? 0;
+      final grandTotal = aluDisc.toDouble() + calc.calcGlassTotal() + _calcHwTotalCustom() + calc.labor;
       final invoice = {
         'name': name,
         'phone': _customerPhoneController.text.trim(),
@@ -518,17 +563,20 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         'color': _selectedThaiColorSet?.color ?? '',
         'thickness': (_selectedThaiColorSet?.profileSize.contains('4') == true) ? 4.0 : 3.0,
         'profile_size': _selectedThaiColorSet?.profileSize ?? '3"',
+        'spec_length': _selectedThaiColorSet?.specLength ?? "21'-0\"",
         'glassBrand': _selectedGlassBrand?.brandName ?? '',
         'glassRate': _selectedGlassBrand?.pricePerSft ?? 0,
         'laborRate': double.tryParse(_laborRateController.text) ?? 0,
-        'total': calc.calcGrandTotal(),
-        'due': calc.calcDue(),
+        'total': grandTotal,
+        'due': grandTotal - calc.advance,
         'date': DateTime.now().toIso8601String(),
         'windows': _windowsList,
         'totalSft': calc.calcTotalSft(),
-        'aluTotal': calc.calcAluTotal(),
+        'aluTotal': aluOrig,
+        'aluDiscount': discountPct,
+        'aluTotalAfterDiscount': aluDisc,
         'glassTotal': calc.calcGlassTotal(),
-        'hwTotal': calc.calcHwTotal(),
+        'hwTotal': _calcHwTotalCustom(),
         'hwItems': hwItems,
         'labor': calc.labor,
         'advance': calc.advance,
@@ -561,7 +609,11 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       };
       
       await DatabaseService.instance.saveInvoice(invoice);
-      _showSnackBar("হিসাব সেভ হয়েছে! ✓", cGreen);
+      if (mounted) {
+        _showSnackBar("হিসাব সেভ হয়েছে! ✓", cGreen);
+        await Future.delayed(const Duration(milliseconds: 500));
+        if (mounted) Navigator.pushReplacementNamed(context, '/home');
+      }
     } catch (e) {
       _showSnackBar("সেভ করার সময় ত্রুটি ঘটেছে: $e", cRed);
     } finally {
@@ -1075,6 +1127,15 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     final hwItems = calc.calcHardwareBreakdown();
     final is4Inch = _selectedThaiColorSet?.profileSize.contains('4') == true;
 
+    // Apply custom rates
+    for (var item in hwItems) {
+      final name = item['name'] as String;
+      if (_customHwRates.containsKey(name)) {
+        item['rate'] = _customHwRates[name];
+        item['cost'] = (item['qty'] as int) * _customHwRates[name]!;
+      }
+    }
+
     // Group items by category
     final fixed3 = hwItems.where((i) => ['স্লাইডিং লক', 'স্লাইডিং হুইল', 'রয়্যাল প্লাজ'].contains(i['name'])).toList();
     final scalable3 = hwItems.where((i) => ['স্ক্রু ১.৫"', 'স্ক্রু ০.৫"', 'মুহির', 'রাবার'].contains(i['name'])).toList();
@@ -1106,13 +1167,51 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       ],
 
       const SizedBox(height: 14),
+      // ── অ্যালুমিনিয়াম সার / ছাড় ──
+      _buildCard(
+        borderColor: cAccent.withOpacity(0.3),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          _buildHeading("💰 অ্যালুমিনিয়াম সার / ছাড়"),
+          const SizedBox(height: 12),
+          _buildTextInput(controller: _aluDiscountController, label: "ছাড় (%)", isNumber: true, onChanged: (v) => setState(() {})),
+          const SizedBox(height: 10),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text("মূল দাম", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 12)),
+              Text("৳ ${_fmtTk(_calcAluTotal().toDouble())}",
+                  style: GoogleFonts.inter(color: cText, fontSize: 15, fontWeight: FontWeight.bold)),
+            ]),
+            if ((double.tryParse(_aluDiscountController.text) ?? 0) > 0) ...[
+              Icon(Icons.arrow_forward, color: cGreen, size: 20),
+              Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                Text("ছাড়ের পর", style: GoogleFonts.hindSiliguri(color: cGreen, fontSize: 12)),
+                Text("৳ ${_fmtTk(_calcAluDiscounted().toDouble())}",
+                    style: GoogleFonts.inter(color: cGreen, fontSize: 15, fontWeight: FontWeight.bold)),
+              ]),
+            ],
+          ]),
+          if ((double.tryParse(_aluDiscountController.text) ?? 0) > 0) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(color: cGreen.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
+              child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Text("সার: ৳ ${_fmtTk((_calcAluTotal() - _calcAluDiscounted()).toDouble())}",
+                    style: GoogleFonts.hindSiliguri(color: cGreen, fontWeight: FontWeight.bold, fontSize: 13)),
+              ]),
+            ),
+          ],
+        ]),
+      ),
+
+      const SizedBox(height: 14),
       // ── Total ──
       _buildCard(
         borderColor: cYellow.withOpacity(0.3),
         child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           Text("মোট এলাকা: ${_calcTotalSft().toStringAsFixed(2)} Sft",
               style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 13)),
-          Text("হার্ডওয়্যার সাবটোটাল: ৳ ${_fmtTk(_calcHwTotal())}",
+          Text("হার্ডওয়্যার সাবটোটাল: ৳ ${_fmtTk(_calcHwTotalCustom())}",
               style: GoogleFonts.hindSiliguri(color: cYellow, fontWeight: FontWeight.bold, fontSize: 15)),
         ]),
       ),
@@ -1126,30 +1225,105 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         Expanded(flex: 3, child: Text("আইটেম", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11))),
         SizedBox(width: 45, child: Text("পরিমাণ", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.center)),
         SizedBox(width: 35, child: Text("ইউনিট", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.center)),
-        SizedBox(width: 55, child: Text("দর", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.right)),
+        SizedBox(width: 70, child: Text("দর ✏️", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.right)),
         SizedBox(width: 65, child: Text("মোট", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.right)),
       ]),
     );
   }
 
   Widget _buildHwRow(Map<String, dynamic> item) {
-    final cost = (item['cost'] as num?)?.toDouble() ?? 0;
-    final rate = (item['rate'] as num?)?.toDouble() ?? 0;
+    final name = item['name'] as String;
+    final customRate = _customHwRates[name];
+    final defaultRate = (item['rate'] as num?)?.toDouble() ?? 0;
+    final rate = customRate ?? defaultRate;
     final qty = item['qty'];
+    final cost = (qty is int ? qty : (qty as num).toInt()) * rate;
+    final isEditable = name.contains('লক') || name.contains('হুইল');
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(children: [
-        Expanded(flex: 3, child: Text("${item['name']}",
+        Expanded(flex: 3, child: Text("$name",
             style: GoogleFonts.hindSiliguri(color: cText, fontSize: 12))),
         SizedBox(width: 45, child: Text("$qty",
             style: GoogleFonts.inter(color: cText, fontSize: 12), textAlign: TextAlign.center)),
         SizedBox(width: 35, child: Text("${item['unit']}",
             style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.center)),
-        SizedBox(width: 55, child: Text("৳${_fmtTk(rate)}",
-            style: GoogleFonts.inter(color: cMuted, fontSize: 11), textAlign: TextAlign.right)),
+        SizedBox(width: 70, child: GestureDetector(
+          onTap: () => _showRateEditDialog(name, rate),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+            decoration: BoxDecoration(
+              color: customRate != null ? cAccent2.withOpacity(0.15) : (isEditable ? cBg : Colors.transparent),
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: customRate != null ? cAccent2.withOpacity(0.5) : (isEditable ? cBorder : Colors.transparent)),
+            ),
+            child: Text("৳${_fmtTk(rate)}${isEditable ? ' ✏' : ''}",
+                style: GoogleFonts.inter(
+                  color: customRate != null ? cAccent2 : (isEditable ? cAccent : cMuted),
+                  fontSize: 11,
+                  fontWeight: isEditable ? FontWeight.w600 : FontWeight.normal,
+                ), textAlign: TextAlign.right),
+          ),
+        )),
         SizedBox(width: 65, child: Text("৳${_fmtTk(cost)}",
             style: GoogleFonts.inter(color: cGreen, fontSize: 12, fontWeight: FontWeight.bold), textAlign: TextAlign.right)),
       ]),
+    );
+  }
+
+  void _showRateEditDialog(String name, double currentRate) {
+    final calc = _getCalculation();
+    final hwItems = calc.calcHardwareBreakdown();
+    double defaultRate = 0;
+    for (var item in hwItems) {
+      if (item['name'] == name) {
+        defaultRate = (item['rate'] as num?)?.toDouble() ?? 0;
+        break;
+      }
+    }
+    final controller = TextEditingController(text: currentRate.toStringAsFixed(currentRate == currentRate.roundToDouble() ? 0 : 2));
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: cCard,
+        title: Text("$name — দর পরিবর্তন", style: GoogleFonts.hindSiliguri(color: cText)),
+        content: TextField(
+          controller: controller,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          autofocus: true,
+          style: GoogleFonts.inter(color: cText, fontSize: 16),
+          decoration: InputDecoration(
+            labelText: "নতুন দর (৳)",
+            labelStyle: GoogleFonts.hindSiliguri(color: cMuted),
+            enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: cBorder)),
+            focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: cAccent)),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () { Navigator.pop(ctx); setState(() => _customHwRates.remove(name)); },
+            child: Text("রিসেট", style: GoogleFonts.hindSiliguri(color: cAccent2)),
+          ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text("বাতিল", style: GoogleFonts.hindSiliguri(color: cMuted))),
+          ElevatedButton(
+            onPressed: () {
+              final newRate = double.tryParse(controller.text);
+              if (newRate != null && newRate >= 0) {
+                setState(() {
+                  if (newRate == defaultRate) {
+                    _customHwRates.remove(name);
+                  } else {
+                    _customHwRates[name] = newRate;
+                  }
+                });
+              }
+              Navigator.pop(ctx);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: cAccent),
+            child: Text("সেভ", style: GoogleFonts.hindSiliguri(color: cBg)),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1177,13 +1351,14 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   Widget _buildStep4() {
     final calc = _getCalculation();
     double totalSft = calc.calcTotalSft();
-    int aluTotal = calc.calcAluTotal();
-    double hwTotal = calc.calcHwTotal();
+    int aluOriginal = calc.calcAluTotal();
+    int aluTotal = _calcAluDiscounted();
+    double hwTotal = _calcHwTotalCustom();
     double glassTotal = calc.calcGlassTotal();
     double labor = calc.labor;
     double advance = calc.advance;
-    double grandTotal = calc.calcGrandTotal();
-    double due = calc.calcDue();
+    double grandTotal = aluTotal.toDouble() + glassTotal + hwTotal + labor;
+    double due = grandTotal - advance;
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       _buildCard(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -1278,6 +1453,8 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           ]),
           const SizedBox(height: 14),
           _buildInvoiceRow("🔩 অ্যালুমিনিয়াম বার", aluTotal.toDouble()),
+          if (aluOriginal != aluTotal)
+            _buildInvoiceRow("  ↳ ${_aluDiscountController.text}% ছাড় পূর্ববর্তী", aluOriginal.toDouble(), color: cMuted, size: 12),
           _buildInvoiceRow("🪟 গ্লাস (${totalSft.toStringAsFixed(1)} Sft)", glassTotal),
           _buildInvoiceRow("🔧 হার্ডওয়্যার", hwTotal),
           _buildInvoiceRow("👷 লেবার / ফিটিং", labor),

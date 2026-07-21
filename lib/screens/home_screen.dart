@@ -684,7 +684,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       onTap: () {
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (context) => InvoiceDetailScreen(invoice: inv)),
+          MaterialPageRoute(builder: (context) => InvoiceDetailScreen(invoice: inv, invoiceIndex: index)),
         );
       },
       child: Container(
