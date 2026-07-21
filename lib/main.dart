@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'screens/login_screen.dart';
-import 'screens/payment_screen.dart';
 import 'screens/calculator_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/deactivated_screen.dart';
@@ -40,7 +39,6 @@ class ThaiCalcProApp extends StatelessWidget {
       routes: {
         '/': (context) => const LoginScreen(),
         '/home': (context) => const HomeScreen(),
-        '/payment': (context) => const PaymentScreen(),
         '/calculator': (context) => const CalculatorScreen(),
         '/deactivated': (context) => const DeactivatedScreen(),
       },

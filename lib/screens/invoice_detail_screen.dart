@@ -309,11 +309,6 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
                       const Divider(color: cBorder, height: 16),
                       _buildMoneyRow("মোট অ্যালুমিনিয়াম", (invoice['aluTotal'] as num?)?.toDouble() ?? 0,
                           isBold: true, color: cAccent),
-                      if ((invoice['aluDiscount'] as num?)?.toDouble() != null &&
-                          (invoice['aluDiscount'] as num?)!.toDouble() > 0)
-                        _buildMoneyRow("  ↳ ${(invoice['aluDiscount'] as num?)!.toInt()}% ছাড়",
-                            (invoice['aluTotalAfterDiscount'] as num?)?.toDouble() ?? 0,
-                            color: cMuted, size: 12),
                     ],
                   )),
                   const SizedBox(height: 12),
@@ -350,7 +345,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
                       Text("🧾 খরচের বিবরণ", style: GoogleFonts.hindSiliguri(color: cText, fontSize: 14, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 10),
                       if (invoice['aluTotal'] != null)
-                        _buildMoneyRow("🔩 অ্যালুমিনিয়াম বার", (invoice['aluTotalAfterDiscount'] as num?)?.toDouble() ?? (invoice['aluTotal'] as num).toDouble()),
+                        _buildMoneyRow("🔩 অ্যালুমিনিয়াম বার", (invoice['aluTotal'] as num?)?.toDouble() ?? 0),
                       if (invoice['glassTotal'] != null)
                         _buildMoneyRow(
                             invoice['glassRate'] != null

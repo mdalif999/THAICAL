@@ -74,7 +74,6 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
 
   final _customerNameController = TextEditingController();
   final _customerPhoneController = TextEditingController();
-  final _aluDiscountController = TextEditingController(text: "0");
   final Map<String, double> _customHwRates = {};
   bool _isSaving = false;
 
@@ -105,7 +104,6 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     _hwRateController.dispose();
     _customerNameController.dispose();
     _customerPhoneController.dispose();
-    _aluDiscountController.dispose();
     super.dispose();
   }
 
@@ -225,13 +223,6 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   double _inchToBars(double inch) {
     final specInches = WindowCalculation.calcSpecLengthInches(_selectedThaiColorSet?.specLength);
     return WindowCalculation.inchToBars(inch, specLengthInches: specInches);
-  }
-
-  int _calcAluDiscounted() {
-    final original = _calcAluTotal();
-    final discountPercent = double.tryParse(_aluDiscountController.text) ?? 0;
-    if (discountPercent <= 0 || discountPercent >= 100) return original;
-    return (original * (100 - discountPercent) / 100).round();
   }
 
   double _calcHwTotalCustom() {
@@ -367,7 +358,6 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       _advanceController.text = "0";
       _customerNameController.clear();
       _customerPhoneController.clear();
-      _aluDiscountController.text = "0";
       _customHwRates.clear();
     });
   }
@@ -375,8 +365,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   Future<void> _shareWhatsApp() async {
     final calc = _getCalculation();
     double totalSft = calc.calcTotalSft();
-    int aluTotal = _calcAluDiscounted();
-    int aluOriginal = calc.calcAluTotal();
+    int aluTotal = calc.calcAluTotal();
     double hwTotal = _calcHwTotalCustom();
     double glassTotal = calc.calcGlassTotal();
     double labor = calc.labor;
@@ -499,7 +488,6 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         "${glassBuffer}"
         "${hwBuffer}"
         "মজুরি/ফিটিং: ৳${_fmtTk(labor)}\n"
-        "${aluOriginal != aluTotal ? "অ্যালুমিনিয়াম ছাড় (${_aluDiscountController.text}%): ৳${_fmtTk((aluOriginal - aluTotal).toDouble())}\n" : ""}"
         "\n"
         "====================================\n"
         "*সর্বমোট বিল: ৳${_fmtTk(grandTotal)}*\n"
@@ -552,10 +540,8 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           item['cost'] = (item['qty'] as int) * _customHwRates[name]!;
         }
       }
-      final aluOrig = calc.calcAluTotal();
-      final aluDisc = _calcAluDiscounted();
-      final discountPct = double.tryParse(_aluDiscountController.text) ?? 0;
-      final grandTotal = aluDisc.toDouble() + calc.calcGlassTotal() + _calcHwTotalCustom() + calc.labor;
+      final aluTotal = calc.calcAluTotal();
+      final grandTotal = aluTotal.toDouble() + calc.calcGlassTotal() + _calcHwTotalCustom() + calc.labor;
       final invoice = {
         'name': name,
         'phone': _customerPhoneController.text.trim(),
@@ -572,9 +558,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         'date': DateTime.now().toIso8601String(),
         'windows': _windowsList,
         'totalSft': calc.calcTotalSft(),
-        'aluTotal': aluOrig,
-        'aluDiscount': discountPct,
-        'aluTotalAfterDiscount': aluDisc,
+        'aluTotal': aluTotal,
         'glassTotal': calc.calcGlassTotal(),
         'hwTotal': _calcHwTotalCustom(),
         'hwItems': hwItems,
@@ -983,7 +967,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           ),
         const Divider(color: cBorder, height: 24),
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text("মোট জানালা: ${_windowsList.length} টি",
+          Text("মোট জানালা: ${_windowsList.fold<int>(0, (sum, w) => sum + ((w['qty'] as num?)?.toInt() ?? 1))} টি",
               style: GoogleFonts.hindSiliguri(color: cText, fontSize: 14)),
           Text("মোট এলাকা: ${_calcTotalSft().toStringAsFixed(2)} Sft",
               style: GoogleFonts.hindSiliguri(
@@ -996,30 +980,30 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   Widget _buildStep2() {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       _buildCard(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        _buildHeading("🔩 কাটিং ইঞ্চি (ওভাররাইড করা যাবে)"),
+        _buildHeading("কাটিং ইঞ্চি (ওভাররাইড করা যাবে)"),
         Text("প্রয়োজন অনুযায়ী এডিট করুন।",
             style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11, fontStyle: FontStyle.italic)),
         const SizedBox(height: 12),
         Row(children: [
-          Expanded(child: _buildTextInput(controller: _osController, label: "O/S আউটার খাড়া মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
+          Expanded(child: _buildTextInput(controller: _osController, label: "O/S আউটার সাইড মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
           const SizedBox(width: 8),
           Expanded(child: _buildTextInput(controller: _otController, label: "O/T আউটার টপ মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
         ]),
         const SizedBox(height: 8),
         Row(children: [
-          Expanded(child: _buildTextInput(controller: _ohbController, label: "O/B আউটার বটম মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
+          Expanded(child: _buildTextInput(controller: _ohbController, label: "OHB আউটার হাই বটম মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
           const SizedBox(width: 8),
-          Expanded(child: _buildTextInput(controller: _slController, label: "S/L পাল্লা লক মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
+          Expanded(child: _buildTextInput(controller: _slController, label: "S/L শাটার লক মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
         ]),
         const SizedBox(height: 8),
         Row(children: [
-          Expanded(child: _buildTextInput(controller: _ilController, label: "I/L পাল্লা ইন্টারলক মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
+          Expanded(child: _buildTextInput(controller: _ilController, label: "I/L ইন্টারলক মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
           const SizedBox(width: 8),
-          Expanded(child: _buildTextInput(controller: _stController, label: "S/T পাল্লা টপ মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
+          Expanded(child: _buildTextInput(controller: _stController, label: "S/T শাটার টপ মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
         ]),
         const SizedBox(height: 8),
         Row(children: [
-          Expanded(child: _buildTextInput(controller: _sbController, label: "S/B পাল্লা বটম মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
+          Expanded(child: _buildTextInput(controller: _sbController, label: "S/B শাটার বটম মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
           const SizedBox(width: 8),
           if (_selectedThaiColorSet?.profileSize.contains('4') == true)
             Expanded(child: _buildTextInput(controller: _nsController, label: "N/S নেট সেকশন মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {})))
@@ -1137,7 +1121,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     }
 
     // Group items by category
-    final fixed3 = hwItems.where((i) => ['স্লাইডিং লক', 'স্লাইডিং হুইল', 'রয়্যাল প্লাজ'].contains(i['name'])).toList();
+    final fixed3 = hwItems.where((i) => ['স্লাইডিং লক', 'স্লাইডিং হুইল', 'রয়্যাল প্লাগ'].contains(i['name'])).toList();
     final scalable3 = hwItems.where((i) => ['স্ক্রু ১.৫"', 'স্ক্রু ০.৫"', 'মুহির', 'রাবার'].contains(i['name'])).toList();
     final fixed4 = hwItems.where((i) => ['নেট এঙ্গেল', 'নেট হুইল'].contains(i['name'])).toList();
     final scalable4 = hwItems.where((i) => ['নেট', 'রিপ্পিট'].contains(i['name'])).toList();
@@ -1165,44 +1149,6 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           for (var item in scalable4) _buildHwRow(item),
         ])),
       ],
-
-      const SizedBox(height: 14),
-      // ── অ্যালুমিনিয়াম সার / ছাড় ──
-      _buildCard(
-        borderColor: cAccent.withOpacity(0.3),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          _buildHeading("💰 অ্যালুমিনিয়াম ছাড়"),
-          const SizedBox(height: 12),
-          _buildTextInput(controller: _aluDiscountController, label: "ছাড় (%)", isNumber: true, onChanged: (v) => setState(() {})),
-          const SizedBox(height: 10),
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text("মূল দাম", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 12)),
-              Text("৳ ${_fmtTk(_calcAluTotal().toDouble())}",
-                  style: GoogleFonts.inter(color: cText, fontSize: 15, fontWeight: FontWeight.bold)),
-            ]),
-            if ((double.tryParse(_aluDiscountController.text) ?? 0) > 0) ...[
-              Icon(Icons.arrow_forward, color: cGreen, size: 20),
-              Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                Text("ছাড়ের পর", style: GoogleFonts.hindSiliguri(color: cGreen, fontSize: 12)),
-                Text("৳ ${_fmtTk(_calcAluDiscounted().toDouble())}",
-                    style: GoogleFonts.inter(color: cGreen, fontSize: 15, fontWeight: FontWeight.bold)),
-              ]),
-            ],
-          ]),
-          if ((double.tryParse(_aluDiscountController.text) ?? 0) > 0) ...[
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(color: cGreen.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
-              child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Text("সার: ৳ ${_fmtTk((_calcAluTotal() - _calcAluDiscounted()).toDouble())}",
-                    style: GoogleFonts.hindSiliguri(color: cGreen, fontWeight: FontWeight.bold, fontSize: 13)),
-              ]),
-            ),
-          ],
-        ]),
-      ),
 
       const SizedBox(height: 14),
       // ── Total ──
@@ -1351,8 +1297,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   Widget _buildStep4() {
     final calc = _getCalculation();
     double totalSft = calc.calcTotalSft();
-    int aluOriginal = calc.calcAluTotal();
-    int aluTotal = _calcAluDiscounted();
+    int aluTotal = calc.calcAluTotal();
     double hwTotal = _calcHwTotalCustom();
     double glassTotal = calc.calcGlassTotal();
     double labor = calc.labor;
@@ -1453,8 +1398,6 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           ]),
           const SizedBox(height: 14),
           _buildInvoiceRow("🔩 অ্যালুমিনিয়াম বার", aluTotal.toDouble()),
-          if (aluOriginal != aluTotal)
-            _buildInvoiceRow("  ↳ ${_aluDiscountController.text}% ছাড় পূর্ববর্তী", aluOriginal.toDouble(), color: cMuted, size: 12),
           _buildInvoiceRow("🪟 গ্লাস (${totalSft.toStringAsFixed(1)} Sft)", glassTotal),
           _buildInvoiceRow("🔧 হার্ডওয়্যার", hwTotal),
           _buildInvoiceRow("👷 লেবার / ফিটিং", labor),

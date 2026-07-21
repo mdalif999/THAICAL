@@ -201,7 +201,7 @@ class WindowCalculation {
       // ── ৩'' Fixed items (per window) ──
       items.add({'name': 'স্লাইডিং লক', 'unit': 'পিস', 'qty': 2 * qty, 'rate': 125.0, 'cost': 250.0 * qty});
       items.add({'name': 'স্লাইডিং হুইল', 'unit': 'পিস', 'qty': 4 * qty, 'rate': 45.0, 'cost': 180.0 * qty});
-      items.add({'name': 'রয়্যাল প্লাজ', 'unit': 'পিস', 'qty': (50 * ratio).ceil() * qty, 'rate': 0.2, 'cost': 10.0 * ratio * qty});
+      items.add({'name': 'রয়্যাল প্লাগ', 'unit': 'পিস', 'qty': (50 * ratio).ceil() * qty, 'rate': 0.2, 'cost': 10.0 * ratio * qty});
 
       // ── ৩'' Scalable items (ratio based) ──
       final screwQty15 = (30 * ratio).ceil();
@@ -228,7 +228,18 @@ class WindowCalculation {
         items.add({'name': 'রিপ্পিট', 'unit': 'পিস', 'qty': rippitQty * qty, 'rate': 0.69, 'cost': 11.0 * ratio * qty});
       }
     }
-    return items;
+    // Same name er items ke merge koro (multiple window er qty/cost jog)
+    final merged = <String, Map<String, dynamic>>{};
+    for (var item in items) {
+      final name = item['name'] as String;
+      if (merged.containsKey(name)) {
+        merged[name]!['qty'] = (merged[name]!['qty'] as int) + (item['qty'] as int);
+        merged[name]!['cost'] = (merged[name]!['cost'] as double) + (item['cost'] as double);
+      } else {
+        merged[name] = Map<String, dynamic>.from(item);
+      }
+    }
+    return merged.values.toList();
   }
 
   /// Total hardware cost from detailed breakdown
