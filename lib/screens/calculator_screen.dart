@@ -43,6 +43,8 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   String? _selectedProfileSize;
 
   bool _isLoadingBrands = true;
+  double _brandDiscount = 0;
+  Map<String, double> _allBrandDiscounts = {};
 
   int _currentStep = 1;
   final List<Map<String, dynamic>> _windowsList = [];
@@ -70,6 +72,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
 
   final _laborController = TextEditingController(text: "0");
   final _laborRateController = TextEditingController(text: "25");
+  final _fareController = TextEditingController(text: "0");
   final _advanceController = TextEditingController(text: "0");
 
   final _customerNameController = TextEditingController();
@@ -100,6 +103,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     _nhController.dispose();
     _laborController.dispose();
     _laborRateController.dispose();
+    _fareController.dispose();
     _advanceController.dispose();
     _hwRateController.dispose();
     _customerNameController.dispose();
@@ -113,21 +117,24 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       final thais = await DatabaseService.instance.getThaiColorSets();
       final glasses = await DatabaseService.instance.getGlassBrands();
       final hardwares = await DatabaseService.instance.getHardwarePrices();
-      
+      final discounts = await DatabaseService.instance.getBrandDiscounts();
+
       setState(() {
         _thaiColorSets = thais;
         _glassBrands = glasses;
         _hardwarePrices = hardwares;
-        
+        _allBrandDiscounts = discounts;
+
         if (glasses.isNotEmpty) {
           _selectedGlassBrand = glasses.first;
         }
-        
+
         if (thais.isNotEmpty) {
           _selectedBrandName = thais.first.brand;
+          _brandDiscount = discounts[_selectedBrandName!] ?? 0;
           _updateColorsForBrand();
         }
-        
+
         _isLoadingBrands = false;
       });
     } catch (e) {
@@ -137,15 +144,16 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
 
   void _updateColorsForBrand() {
     if (_selectedBrandName == null || _thaiColorSets.isEmpty) return;
-    
+
     final colors = _thaiColorSets
         .where((e) => e.brand == _selectedBrandName)
         .map((e) => e.color)
         .toSet()
         .toList();
-    
+
     setState(() {
       _selectedColorName = colors.isNotEmpty ? colors.first : null;
+      _brandDiscount = _allBrandDiscounts[_selectedBrandName!] ?? 0;
       _updateProfileSizesForColor();
     });
   }
@@ -217,7 +225,10 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   }
 
   double _calcTotalSft() => _getCalculation().calcTotalSft();
-  int _calcAluTotal() => _getCalculation().calcAluTotal();
+  int _calcAluTotal() {
+    final baseTotal = _getCalculation().calcAluTotal();
+    return (baseTotal * (1 - _brandDiscount / 100)).round();
+  }
   double _calcHwTotal() => _getCalculation().calcHwTotal();
   double _calcSft(double w, double h, int qty) => WindowCalculation.calcSft(w, h, qty);
   double _inchToBars(double inch) {
@@ -355,6 +366,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       _nhController.clear();
       _laborController.text = "0";
       _laborRateController.text = "25";
+      _fareController.text = "0";
       _advanceController.text = "0";
       _customerNameController.clear();
       _customerPhoneController.clear();
@@ -369,8 +381,9 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     double hwTotal = _calcHwTotalCustom();
     double glassTotal = calc.calcGlassTotal();
     double labor = calc.labor;
+    double fare = double.tryParse(_fareController.text) ?? 0;
     double advance = calc.advance;
-    double grandTotal = aluTotal.toDouble() + glassTotal + hwTotal + labor;
+    double grandTotal = aluTotal.toDouble() + glassTotal + hwTotal + labor + fare;
     double due = grandTotal - advance;
     final hwItems = calc.calcHardwareBreakdown();
 
@@ -484,10 +497,12 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         "${windowBuffer}"
         "====================================\n"
         "${cutBuffer}"
+        "${_brandDiscount > 0 ? "  ডিসকাউন্ট (-${_brandDiscount.toStringAsFixed(0)}%)\n" : ""}"
         "====================================\n"
         "${glassBuffer}"
         "${hwBuffer}"
         "মজুরি/ফিটিং: ৳${_fmtTk(labor)}\n"
+        "${fare > 0 ? "গাড়ি ভাড়া: ৳${_fmtTk(fare)}\n" : ""}"
         "\n"
         "====================================\n"
         "*সর্বমোট বিল: ৳${_fmtTk(grandTotal)}*\n"
@@ -541,7 +556,9 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         }
       }
       final aluTotal = calc.calcAluTotal();
-      final grandTotal = aluTotal.toDouble() + calc.calcGlassTotal() + _calcHwTotalCustom() + calc.labor;
+      final aluTotalAfterDiscount = _calcAluTotal();
+      final fare = double.tryParse(_fareController.text) ?? 0;
+      final grandTotal = aluTotalAfterDiscount.toDouble() + calc.calcGlassTotal() + _calcHwTotalCustom() + calc.labor + fare;
       final invoice = {
         'name': name,
         'phone': _customerPhoneController.text.trim(),
@@ -553,16 +570,18 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         'glassBrand': _selectedGlassBrand?.brandName ?? '',
         'glassRate': _selectedGlassBrand?.pricePerSft ?? 0,
         'laborRate': double.tryParse(_laborRateController.text) ?? 0,
+        'brandDiscount': _brandDiscount,
         'total': grandTotal,
         'due': grandTotal - calc.advance,
         'date': DateTime.now().toIso8601String(),
         'windows': _windowsList,
         'totalSft': calc.calcTotalSft(),
-        'aluTotal': aluTotal,
+        'aluTotal': aluTotalAfterDiscount,
         'glassTotal': calc.calcGlassTotal(),
         'hwTotal': _calcHwTotalCustom(),
         'hwItems': hwItems,
         'labor': calc.labor,
+        'fare': fare,
         'advance': calc.advance,
         'dlCount': _dlCount,
         'swCount': _swCount,
@@ -1027,6 +1046,16 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           const SizedBox(height: 12),
           _buildAluBreakdownTable(),
           const SizedBox(height: 16),
+          if (_brandDiscount > 0) ...[
+            Text(
+              "অ্যালুমিনিয়াম (মূল দাম): ৳ ${_fmtTk(_getCalculation().calcAluTotal().toDouble())}",
+              style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 13, decoration: TextDecoration.lineThrough)),
+            const SizedBox(height: 4),
+            Text(
+              "ডিসকাউন্ট (-${_brandDiscount.toStringAsFixed(0)}%): ৳ ${_fmtTk((_getCalculation().calcAluTotal() - _calcAluTotal()).toDouble())}",
+              style: GoogleFonts.hindSiliguri(color: cYellow, fontSize: 12)),
+            const SizedBox(height: 4),
+          ],
           Text(
             "অ্যালুমিনিয়াম সাবটোটাল: ৳ ${_fmtTk(_calcAluTotal().toDouble())}",
             style: GoogleFonts.hindSiliguri(color: cGreen, fontWeight: FontWeight.bold, fontSize: 15)),
@@ -1094,11 +1123,22 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                     style: GoogleFonts.inter(color: cBg, fontSize: 10, fontWeight: FontWeight.bold)),
               )),
           SizedBox(width: 55,
-              child: Text("${row['price']}",
-                  style: GoogleFonts.inter(color: cMuted, fontSize: 12),
-                  textAlign: TextAlign.right)),
+              child: _brandDiscount > 0
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text("${row['price']}",
+                            style: GoogleFonts.inter(color: cMuted, fontSize: 12)),
+                        Text("${((row['price'] as int) * (1 - _brandDiscount / 100)).round()}",
+                            style: GoogleFonts.inter(color: cGreen, fontSize: 13, fontWeight: FontWeight.bold)),
+                      ],
+                    )
+                  : Text("${row['price']}",
+                      style: GoogleFonts.inter(color: cMuted, fontSize: 12),
+                      textAlign: TextAlign.right)),
           SizedBox(width: 65,
-              child: Text("${(_inchToBars(row['inch'] as double) * (row['price'] as int)).round()}",
+              child: Text("${(_inchToBars(row['inch'] as double) * (row['price'] as int) * (1 - _brandDiscount / 100)).round()}",
                   style: GoogleFonts.inter(color: cGreen, fontSize: 13, fontWeight: FontWeight.bold),
                   textAlign: TextAlign.right)),
         ]),
@@ -1121,7 +1161,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     }
 
     // Group items by category
-    final fixed3 = hwItems.where((i) => ['স্লাইডিং লক', 'স্লাইডিং হুইল', 'রয়্যাল প্লাগ'].contains(i['name'])).toList();
+    final fixed3 = hwItems.where((i) => ['স্লাইডিং লক', 'স্লাইডিং হুইল', 'সিলিকন গাম', 'রয়্যাল প্লাগ'].contains(i['name'])).toList();
     final scalable3 = hwItems.where((i) => ['স্ক্রু ১.৫"', 'স্ক্রু ০.৫"', 'মুহির', 'রাবার'].contains(i['name'])).toList();
     final fixed4 = hwItems.where((i) => ['নেট এঙ্গেল', 'নেট হুইল'].contains(i['name'])).toList();
     final scalable4 = hwItems.where((i) => ['নেট', 'রিপ্পিট'].contains(i['name'])).toList();
@@ -1184,7 +1224,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     final rate = customRate ?? defaultRate;
     final qty = item['qty'];
     final cost = (qty is int ? qty : (qty as num).toInt()) * rate;
-    final isEditable = name.contains('লক') || name.contains('হুইল');
+    final isEditable = name.contains('লক') || name.contains('হুইল') || name.contains('গাম');
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(children: [
@@ -1298,11 +1338,13 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     final calc = _getCalculation();
     double totalSft = calc.calcTotalSft();
     int aluTotal = calc.calcAluTotal();
+    int aluTotalAfterDiscount = _calcAluTotal();
     double hwTotal = _calcHwTotalCustom();
     double glassTotal = calc.calcGlassTotal();
     double labor = calc.labor;
+    double fare = double.tryParse(_fareController.text) ?? 0;
     double advance = calc.advance;
-    double grandTotal = aluTotal.toDouble() + glassTotal + hwTotal + labor;
+    double grandTotal = aluTotalAfterDiscount.toDouble() + glassTotal + hwTotal + labor + fare;
     double due = grandTotal - advance;
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -1357,6 +1399,13 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
             style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11)),
         const SizedBox(height: 10),
         _buildTextInput(
+          controller: _fareController,
+          label: "গাড়ি ভাড়া — Transport Fare (Tk)",
+          isNumber: true,
+          onChanged: (v) => setState(() {}),
+        ),
+        const SizedBox(height: 10),
+        _buildTextInput(
           controller: _advanceController,
           label: "অগ্রিম জমা — Advance (Tk)",
           isNumber: true,
@@ -1397,10 +1446,15 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
             Expanded(child: _buildCompactProfileSizeDropdown()),
           ]),
           const SizedBox(height: 14),
-          _buildInvoiceRow("🔩 অ্যালুমিনিয়াম বার", aluTotal.toDouble()),
+          if (_brandDiscount > 0) ...[
+            _buildInvoiceRow("🔩 অ্যালুমিনিয়াম (মূল)", aluTotal.toDouble(), color: cMuted),
+            _buildInvoiceRow("  (-${_brandDiscount.toStringAsFixed(0)}% ডিসকাউন্ট)", -(aluTotal.toDouble() - aluTotalAfterDiscount.toDouble()), color: cYellow),
+          ],
+          _buildInvoiceRow("🔩 অ্যালুমিনিয়াম বার", aluTotalAfterDiscount.toDouble()),
           _buildInvoiceRow("🪟 গ্লাস (${totalSft.toStringAsFixed(1)} Sft)", glassTotal),
           _buildInvoiceRow("🔧 হার্ডওয়্যার", hwTotal),
           _buildInvoiceRow("👷 লেবার / ফিটিং", labor),
+          if (fare > 0) _buildInvoiceRow("🚗 গাড়ি ভাড়া", fare),
           const SizedBox(height: 6),
           const Divider(color: cBorder),
           const SizedBox(height: 6),

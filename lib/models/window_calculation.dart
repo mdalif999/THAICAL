@@ -201,6 +201,7 @@ class WindowCalculation {
       // ── ৩'' Fixed items (per window) ──
       items.add({'name': 'স্লাইডিং লক', 'unit': 'পিস', 'qty': 2 * qty, 'rate': 125.0, 'cost': 250.0 * qty});
       items.add({'name': 'স্লাইডিং হুইল', 'unit': 'পিস', 'qty': 4 * qty, 'rate': 45.0, 'cost': 180.0 * qty});
+      items.add({'name': 'সিলিকন গাম', 'unit': 'পিস', 'qty': ((qty + 3) ~/ 4), 'rate': 100.0, 'cost': ((qty + 3) ~/ 4) * 100.0});
       items.add({'name': 'রয়্যাল প্লাগ', 'unit': 'পিস', 'qty': (50 * ratio).ceil() * qty, 'rate': 0.2, 'cost': 10.0 * ratio * qty});
 
       // ── ৩'' Scalable items (ratio based) ──

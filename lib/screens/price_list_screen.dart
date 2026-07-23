@@ -18,6 +18,7 @@ class _PriceListScreenState extends State<PriceListScreen> with SingleTickerProv
   List<ThaiColorSet> _thaiList = [];
   List<GlassBrand> _glassList = [];
   List<HardwarePrice> _hardwareList = [];
+  Map<String, double> _brandDiscounts = {};
   bool _isLoading = true;
 
   static const Color cBg = Color(0xFF0F1117);
@@ -27,6 +28,8 @@ class _PriceListScreenState extends State<PriceListScreen> with SingleTickerProv
   static const Color cAccent2 = Color(0xFFFF6B35);
   static const Color cText = Color(0xFFE8EAF0);
   static const Color cMuted = Color(0xFF6B7280);
+  static const Color cGreen = Color(0xFF22C55E);
+  static const Color cYellow = Color(0xFFF59E0B);
 
   @override
   void initState() {
@@ -47,16 +50,99 @@ class _PriceListScreenState extends State<PriceListScreen> with SingleTickerProv
       final thai = await DatabaseService.instance.getThaiColorSets();
       final glass = await DatabaseService.instance.getGlassBrands();
       final hw = await DatabaseService.instance.getHardwarePrices();
+      final discounts = await DatabaseService.instance.getBrandDiscounts();
       if (mounted) {
         setState(() {
           _thaiList = thai;
           _glassList = glass;
           _hardwareList = hw;
+          _brandDiscounts = discounts;
           _isLoading = false;
         });
       }
     } catch (e) {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _showDiscountDialog(String brand) async {
+    final currentDiscount = _brandDiscounts[brand] ?? 0;
+    final controller = TextEditingController(text: currentDiscount > 0 ? currentDiscount.toStringAsFixed(0) : '');
+
+    final result = await showDialog<double>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: cCard,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: cBorder),
+        ),
+        title: Text(
+          "ডিসকাউন্ট সেট করুন",
+          style: GoogleFonts.hindSiliguri(color: cText, fontWeight: FontWeight.bold),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              "ব্র্যান্ড: $brand",
+              style: GoogleFonts.hindSiliguri(color: cAccent, fontSize: 14, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              style: GoogleFonts.inter(color: cText, fontSize: 16),
+              decoration: InputDecoration(
+                labelText: "ডিসকাউন্ট (%)",
+                labelStyle: GoogleFonts.hindSiliguri(color: cMuted),
+                suffixText: "%",
+                suffixStyle: GoogleFonts.inter(color: cAccent, fontSize: 16, fontWeight: FontWeight.bold),
+                enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: cBorder)),
+                focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: cAccent)),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "0 = কোনো ডিসকাউন্ট নেই",
+              style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text("বাতিল", style: GoogleFonts.hindSiliguri(color: cMuted)),
+          ),
+          if (currentDiscount > 0)
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx, 0.0);
+              },
+              child: Text("মুছুন", style: GoogleFonts.hindSiliguri(color: cAccent2)),
+            ),
+          ElevatedButton(
+            onPressed: () {
+              final val = double.tryParse(controller.text) ?? 0;
+              Navigator.pop(ctx, val);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: cAccent),
+            child: Text("সেভ করুন", style: GoogleFonts.hindSiliguri(color: cBg, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null && mounted) {
+      await DatabaseService.instance.saveBrandDiscount(brand, result);
+      setState(() {
+        if (result > 0) {
+          _brandDiscounts[brand] = result;
+        } else {
+          _brandDiscounts.remove(brand);
+        }
+      });
     }
   }
 
@@ -125,6 +211,7 @@ class _PriceListScreenState extends State<PriceListScreen> with SingleTickerProv
       itemBuilder: (ctx, brandIdx) {
         final brand = grouped.keys.elementAt(brandIdx);
         final items = grouped[brand]!;
+        final discount = _brandDiscounts[brand] ?? 0;
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
           decoration: BoxDecoration(
@@ -135,22 +222,49 @@ class _PriceListScreenState extends State<PriceListScreen> with SingleTickerProv
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Brand header
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: cAccent.withOpacity(0.1),
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                ),
-                child: Text(
-                  brand,
-                  style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.bold, color: cAccent),
+              // Brand header with discount button
+              GestureDetector(
+                onTap: () => _showDiscountDialog(brand),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: cAccent.withOpacity(0.1),
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        brand,
+                        style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.bold, color: cAccent),
+                      ),
+                      Row(
+                        children: [
+                          if (discount > 0) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: cGreen.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                "-${discount.toStringAsFixed(0)}%",
+                                style: GoogleFonts.inter(color: cGreen, fontSize: 11, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                          ],
+                          Icon(Icons.edit_rounded, color: cMuted, size: 16),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
               // Items
               for (var item in items)
-                _buildThaiItem(item),
+                _buildThaiItem(item, discount),
             ],
           ),
         );
@@ -158,7 +272,7 @@ class _PriceListScreenState extends State<PriceListScreen> with SingleTickerProv
     );
   }
 
-  Widget _buildThaiItem(ThaiColorSet item) {
+  Widget _buildThaiItem(ThaiColorSet item, double brandDiscount) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: const BoxDecoration(
@@ -193,31 +307,55 @@ class _PriceListScreenState extends State<PriceListScreen> with SingleTickerProv
           ),
           const SizedBox(height: 8),
           // Price grid
-          _buildPriceRow("O/S আউটার খাড়া", item.priceOs),
-          _buildPriceRow("O/T আউটার টপ", item.priceOt),
-          _buildPriceRow("O/B আউটার বটম", item.priceOhb),
-          _buildPriceRow("S/L পাল্লা লক", item.priceSl),
-          _buildPriceRow("I/L ইন্টারলক", item.priceIl),
-          _buildPriceRow("S/T পাল্লা টপ", item.priceSt),
-          _buildPriceRow("S/B পাল্লা বটম", item.priceSb),
+          _buildPriceRow("O/S আউটার খাড়া", item.priceOs, brandDiscount),
+          _buildPriceRow("O/T আউটার টপ", item.priceOt, brandDiscount),
+          _buildPriceRow("O/B আউটার বটম", item.priceOhb, brandDiscount),
+          _buildPriceRow("S/L পাল্লা লক", item.priceSl, brandDiscount),
+          _buildPriceRow("I/L ইন্টারলক", item.priceIl, brandDiscount),
+          _buildPriceRow("S/T পাল্লা টপ", item.priceSt, brandDiscount),
+          _buildPriceRow("S/B পাল্লা বটম", item.priceSb, brandDiscount),
           if (item.profileSize.contains('4')) ...[
-            if (item.priceNs != null) _buildPriceRow("N/S নেট সেকশন", item.priceNs!),
-            if (item.priceNb != null) _buildPriceRow("N/H নেট হ্যান্ডেল", item.priceNb!),
+            if (item.priceNs != null) _buildPriceRow("N/S নেট সেকশন", item.priceNs!, brandDiscount),
+            if (item.priceNb != null) _buildPriceRow("N/H নেট হ্যান্ডেল", item.priceNb!, brandDiscount),
           ],
         ],
       ),
     );
   }
 
-  Widget _buildPriceRow(String label, int price) {
+  Widget _buildPriceRow(String label, int price, double brandDiscount) {
+    final discountedPrice = (price * (1 - brandDiscount / 100)).round();
+    final hasDiscount = brandDiscount > 0;
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label, style: GoogleFonts.hindSiliguri(color: cText, fontSize: 12)),
-          Text("৳ $price / বার",
-              style: GoogleFonts.inter(color: cAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+          Row(
+            children: [
+              if (hasDiscount) ...[
+                Text(
+                  "৳ $price",
+                  style: GoogleFonts.inter(
+                    color: cMuted,
+                    fontSize: 11,
+                    decoration: TextDecoration.lineThrough,
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ],
+              Text(
+                "৳ ${hasDiscount ? discountedPrice : price} / বার",
+                style: GoogleFonts.inter(
+                  color: hasDiscount ? cGreen : cAccent,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );

@@ -345,7 +345,11 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
                       Text("🧾 খরচের বিবরণ", style: GoogleFonts.hindSiliguri(color: cText, fontSize: 14, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 10),
                       if (invoice['aluTotal'] != null)
-                        _buildMoneyRow("🔩 অ্যালুমিনিয়াম বার", (invoice['aluTotal'] as num?)?.toDouble() ?? 0),
+                        _buildMoneyRow(
+                            (invoice['brandDiscount'] != null && (invoice['brandDiscount'] as num).toDouble() > 0)
+                                ? "🔩 অ্যালুমিনিয়াম (-${(invoice['brandDiscount'] as num).toStringAsFixed(0)}%)"
+                                : "🔩 অ্যালুমিনিয়াম বার",
+                            (invoice['aluTotal'] as num?)?.toDouble() ?? 0),
                       if (invoice['glassTotal'] != null)
                         _buildMoneyRow(
                             invoice['glassRate'] != null
@@ -360,6 +364,8 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
                                 ? "👷 লেবার (${totalSft.toStringAsFixed(1)} Sft × ৳${_fmtTk((invoice['laborRate'] as num).toDouble())})"
                                 : "👷 লেবার / ফিটিং",
                             (invoice['labor'] as num).toDouble()),
+                      if (invoice['fare'] != null && (invoice['fare'] as num).toDouble() > 0)
+                        _buildMoneyRow("🚗 গাড়ি ভাড়া", (invoice['fare'] as num).toDouble()),
                       const Divider(color: cBorder, height: 20),
                       _buildMoneyRow("মোট বিল (Grand Total)", (invoice['total'] as num).toDouble(),
                           isBold: true, color: cAccent, size: 16),
@@ -419,6 +425,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     final hwRate = (invoice['hwRate'] as num?)?.toDouble() ?? 25;
     final labor = (invoice['labor'] as num?)?.toDouble() ?? 0;
     final laborRate = (invoice['laborRate'] as num?)?.toDouble() ?? 0;
+    final fare = (invoice['fare'] as num?)?.toDouble() ?? 0;
     final total = (invoice['total'] as num?)?.toDouble() ?? 0;
     final advance = (invoice['advance'] as num?)?.toDouble() ?? 0;
     final due = (invoice['due'] as num?)?.toDouble() ?? 0;
@@ -532,6 +539,9 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     if (labor > 0) {
       buffer.writeln("মজুরি/ফিটিং: ৳${_fmtTk(labor)}");
       if (laborRate > 0) buffer.writeln("  (${totalSft.toStringAsFixed(1)} Sft x ৳${_fmtTk(laborRate)})");
+    }
+    if (fare > 0) {
+      buffer.writeln("গাড়ি ভাড়া: ৳${_fmtTk(fare)}");
     }
     buffer.writeln();
     buffer.writeln("====================================");

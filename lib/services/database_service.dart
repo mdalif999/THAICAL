@@ -1212,6 +1212,45 @@ class DatabaseService {
     await prefs.remove(_profilePicKey);
   }
 
+  // ── Brand Discount Management ──
+  static const String _brandDiscountsKey = 'brand_discounts';
+
+  Future<void> saveBrandDiscount(String brand, double discount) async {
+    final prefs = await SharedPreferences.getInstance();
+    final current = await getBrandDiscounts();
+    current[brand] = discount;
+    final encoded = current.map((k, v) => MapEntry(k, v));
+    await prefs.setString(_brandDiscountsKey, encoded.toString());
+  }
+
+  Future<Map<String, double>> getBrandDiscounts() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_brandDiscountsKey);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final Map<String, double> result = {};
+      final content = raw.substring(1, raw.length - 1); // remove { }
+      if (content.isEmpty) return {};
+      final pairs = content.split(', ');
+      for (var pair in pairs) {
+        final kv = pair.split(': ');
+        if (kv.length == 2) {
+          final key = kv[0].trim();
+          final val = double.tryParse(kv[1].trim());
+          if (val != null) result[key] = val;
+        }
+      }
+      return result;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Future<double> getBrandDiscount(String brand) async {
+    final discounts = await getBrandDiscounts();
+    return discounts[brand] ?? 0;
+  }
+
   // ── Message Check (Supabase `messages` table) ──
   static const String _lastMessageCheckKey = 'last_message_check_timestamp';
   static const String _lastSeenMessageIdKey = 'last_seen_message_id';
