@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/database_service.dart';
@@ -183,6 +184,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       ),
       builder: (ctx) => Padding(
         padding: const EdgeInsets.all(20),
+        child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -195,7 +197,59 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
             const SizedBox(height: 6),
             Text("কোনো সমস্যায় নিচের যেকোনো মাধ্যমে যোগাযোগ করুন",
                 style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 12)),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
+            // ── bKash Renewal Instructions ──
+            GestureDetector(
+              onTap: () async {
+                await Clipboard.setData(const ClipboardData(text: "01710460274"));
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text("নম্বর কপি হয়েছে!",
+                          style: GoogleFonts.hindSiliguri(color: Colors.white, fontSize: 13)),
+                      backgroundColor: cAccent,
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                }
+                if (ctx.mounted) Navigator.pop(ctx);
+              },
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: cAccent2.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: cAccent2.withOpacity(0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.info_outline_rounded, color: cAccent2, size: 16),
+                        const SizedBox(width: 6),
+                        Text("রিনিউ করতে:",
+                            style: GoogleFonts.hindSiliguri(color: cAccent2, fontSize: 13, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text.rich(
+                      TextSpan(children: [
+                        TextSpan(text: "১) 01710460274", style: GoogleFonts.hindSiliguri(color: cText, fontSize: 12)),
+                        TextSpan(text: " (ট্যাপ করুন)", style: GoogleFonts.hindSiliguri(color: cAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                        TextSpan(text: " নম্বরে bKash করুন", style: GoogleFonts.hindSiliguri(color: cText, fontSize: 12)),
+                      ]),
+                    ),
+                    Text(
+                      "২) bKash স্ক্রিনশট নিন\n৩) WhatsApp এ 01710460274 নম্বরে পাঠান",
+                      style: GoogleFonts.hindSiliguri(color: cText, fontSize: 12, height: 1.5),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
 
             // WhatsApp
             ListTile(
@@ -272,6 +326,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
             ),
             const SizedBox(height: 12),
           ],
+        ),
         ),
       ),
     );

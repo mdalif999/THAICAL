@@ -45,6 +45,8 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   bool _isLoadingBrands = true;
   double _brandDiscount = 0;
   Map<String, double> _allBrandDiscounts = {};
+  List<String> _selectedBrands = [];
+  bool _showBrandFilter = false;
 
   int _currentStep = 1;
   final List<Map<String, dynamic>> _windowsList = [];
@@ -118,19 +120,25 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       final glasses = await DatabaseService.instance.getGlassBrands();
       final hardwares = await DatabaseService.instance.getHardwarePrices();
       final discounts = await DatabaseService.instance.getBrandDiscounts();
+      final savedBrands = await DatabaseService.instance.getSelectedBrands();
 
       setState(() {
         _thaiColorSets = thais;
         _glassBrands = glasses;
         _hardwarePrices = hardwares;
         _allBrandDiscounts = discounts;
+        _selectedBrands = savedBrands;
 
         if (glasses.isNotEmpty) {
           _selectedGlassBrand = glasses.first;
         }
 
         if (thais.isNotEmpty) {
-          _selectedBrandName = thais.first.brand;
+          final allBrands = thais.map((e) => e.brand).toSet().toList();
+          final filteredBrands = _selectedBrands.isEmpty
+              ? allBrands
+              : allBrands.where((b) => _selectedBrands.contains(b)).toList();
+          _selectedBrandName = filteredBrands.isNotEmpty ? filteredBrands.first : allBrands.first;
           _brandDiscount = discounts[_selectedBrandName!] ?? 0;
           _updateColorsForBrand();
         }
@@ -158,6 +166,194 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     });
   }
 
+  Future<void> _showStep1DiscountDialog() async {
+    if (_selectedBrandName == null) return;
+    final brand = _selectedBrandName!;
+    final controller = TextEditingController(
+        text: _brandDiscount > 0 ? _brandDiscount.toString() : '');
+
+    final result = await showDialog<double>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: cCard,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: cBorder),
+        ),
+        title: Text(
+          "ডিসকাউন্ট সেট করুন",
+          style: GoogleFonts.hindSiliguri(color: cText, fontWeight: FontWeight.bold),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              "ব্র্যান্ড: $brand",
+              style: GoogleFonts.hindSiliguri(color: cAccent, fontSize: 14, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              style: GoogleFonts.inter(color: cText, fontSize: 16),
+              decoration: InputDecoration(
+                labelText: "ডিসকাউন্ট (%)",
+                labelStyle: GoogleFonts.hindSiliguri(color: cMuted),
+                suffixText: "%",
+                suffixStyle: GoogleFonts.inter(color: cAccent, fontSize: 16, fontWeight: FontWeight.bold),
+                enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: cBorder)),
+                focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: cAccent)),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "0 = কোনো ডিসকাউন্ট নেই (0-100%)",
+              style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text("বাতিল", style: GoogleFonts.hindSiliguri(color: cMuted)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final val = (double.tryParse(controller.text) ?? 0).clamp(0.0, 100.0);
+              Navigator.pop(ctx, val);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: cAccent),
+            child: Text("সেভ করুন", style: GoogleFonts.hindSiliguri(color: cBg, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    controller.dispose();
+    if (result != null && mounted) {
+      await DatabaseService.instance.saveBrandDiscount(brand, result);
+      setState(() {
+        _brandDiscount = result;
+        _allBrandDiscounts[brand] = result;
+      });
+    }
+  }
+
+  Future<void> _showBrandFilterDialog() async {
+    final allBrands = _thaiColorSets.map((e) => e.brand).toSet().toList();
+    final tempSelected = Set<String>.from(_selectedBrands);
+
+    final result = await showDialog<List<String>>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          backgroundColor: cCard,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: cBorder),
+          ),
+          title: Text(
+            "ব্র্যান্ড সিলেক্ট করুন",
+            style: GoogleFonts.hindSiliguri(color: cText, fontWeight: FontWeight.bold),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                "যেসব ব্র্যান্ড নিয়ে কাজ করবেন সেগুলো সিলেক্ট করুন।",
+                style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 12),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  GestureDetector(
+                    onTap: () {
+                      setDialogState(() {
+                        if (tempSelected.length == allBrands.length) {
+                          tempSelected.clear();
+                        } else {
+                          tempSelected.addAll(allBrands);
+                        }
+                      });
+                    },
+                    child: Text(
+                      tempSelected.length == allBrands.length ? "সব বাদ দিন" : "সব সিলেক্ট",
+                      style: GoogleFonts.hindSiliguri(color: cAccent, fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: allBrands.map((brand) {
+                  final isSelected = tempSelected.contains(brand);
+                  return GestureDetector(
+                    onTap: () {
+                      setDialogState(() {
+                        if (isSelected) {
+                          tempSelected.remove(brand);
+                        } else {
+                          tempSelected.add(brand);
+                        }
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isSelected ? cAccent.withOpacity(0.15) : cBorder.withOpacity(0.3),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: isSelected ? cAccent : cBorder),
+                      ),
+                      child: Text(
+                        brand,
+                        style: GoogleFonts.hindSiliguri(
+                          color: isSelected ? cAccent : cMuted,
+                          fontSize: 12,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text("বাতিল", style: GoogleFonts.hindSiliguri(color: cMuted)),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, tempSelected.toList()),
+              style: ElevatedButton.styleFrom(backgroundColor: cAccent),
+              child: Text("সেভ করুন", style: GoogleFonts.hindSiliguri(color: cBg, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (result != null && mounted) {
+      await DatabaseService.instance.saveSelectedBrands(result);
+      setState(() {
+        _selectedBrands = result;
+        // Reset selected brand if it's no longer in filtered list
+        final allBrands = _thaiColorSets.map((e) => e.brand).toSet().toList();
+        final filteredBrands = _selectedBrands.isEmpty
+            ? allBrands
+            : allBrands.where((b) => _selectedBrands.contains(b)).toList();
+        if (!filteredBrands.contains(_selectedBrandName)) {
+          _selectedBrandName = filteredBrands.isNotEmpty ? filteredBrands.first : allBrands.first;
+          _updateColorsForBrand();
+        }
+      });
+    }
+  }
+
   void _updateProfileSizesForColor() {
     if (_selectedBrandName == null || _selectedColorName == null || _thaiColorSets.isEmpty) return;
     
@@ -168,7 +364,12 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         .toList();
         
     setState(() {
-      _selectedProfileSize = sizes.isNotEmpty ? sizes.first : null;
+      // ডিফল্টভাবে ৩" (নেট ছাড়া) সিলেক্ট হবে
+      if (sizes.isNotEmpty) {
+        _selectedProfileSize = sizes.contains('3"') ? '3"' : sizes.first;
+      } else {
+        _selectedProfileSize = null;
+      }
       _updateSelectedThaiColorSet();
     });
   }
@@ -378,12 +579,13 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     final calc = _getCalculation();
     double totalSft = calc.calcTotalSft();
     int aluTotal = calc.calcAluTotal();
+    int aluTotalAfterDiscount = _calcAluTotal();
     double hwTotal = _calcHwTotalCustom();
     double glassTotal = calc.calcGlassTotal();
     double labor = calc.labor;
     double fare = double.tryParse(_fareController.text) ?? 0;
     double advance = calc.advance;
-    double grandTotal = aluTotal.toDouble() + glassTotal + hwTotal + labor + fare;
+    double grandTotal = aluTotalAfterDiscount.toDouble() + glassTotal + hwTotal + labor + fare;
     double due = grandTotal - advance;
     final hwItems = calc.calcHardwareBreakdown();
 
@@ -470,7 +672,11 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         }
       }
       cutBuffer.writeln("  -------------------");
-      cutBuffer.writeln("  অ্যালুমিনিয়াম মোট: ৳${_fmtTk(aluTotal.toDouble())}");
+      if (_brandDiscount > 0) {
+        cutBuffer.writeln("  অ্যালুমিনিয়াম (মূল্য): ৳${_fmtTk(aluTotal.toDouble())}");
+        cutBuffer.writeln("  ডিসকাউন্ট (-${_brandDiscount.toStringAsFixed(0)}%): -৳${_fmtTk((aluTotal - aluTotalAfterDiscount).toDouble())}");
+      }
+      cutBuffer.writeln("  অ্যালুমিনিয়াম মোট: ৳${_fmtTk(aluTotalAfterDiscount.toDouble())}");
       cutBuffer.writeln();
     }
 
@@ -497,7 +703,6 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         "${windowBuffer}"
         "====================================\n"
         "${cutBuffer}"
-        "${_brandDiscount > 0 ? "  ডিসকাউন্ট (-${_brandDiscount.toStringAsFixed(0)}%)\n" : ""}"
         "====================================\n"
         "${glassBuffer}"
         "${hwBuffer}"
@@ -775,7 +980,10 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
 
   Widget _buildStep1() {
     // Collect distinct brand list
-    final brandsList = _thaiColorSets.map((e) => e.brand).toSet().toList();
+    final allBrandsList = _thaiColorSets.map((e) => e.brand).toSet().toList();
+    final brandsList = _selectedBrands.isEmpty
+        ? allBrandsList
+        : allBrandsList.where((b) => _selectedBrands.contains(b)).toList();
     // Colors matching selected brand
     final colorsList = _thaiColorSets
         .where((e) => e.brand == _selectedBrandName)
@@ -790,6 +998,46 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         .toList();
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      // Brand Filter Card
+      _buildCard(
+        borderColor: _selectedBrands.isNotEmpty ? cAccent.withOpacity(0.3) : null,
+        child: GestureDetector(
+          onTap: _showBrandFilterDialog,
+          behavior: HitTestBehavior.opaque,
+          child: Row(
+            children: [
+              Icon(Icons.filter_list_rounded,
+                  color: _selectedBrands.isNotEmpty ? cAccent : cMuted, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "ব্র্যান্ড ফিল্টার",
+                      style: GoogleFonts.hindSiliguri(
+                        color: cText, fontSize: 13, fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _selectedBrands.isEmpty
+                          ? "সব ব্র্যান্ড দেখাচ্ছে — ট্যাপ করে ফিল্টার করুন"
+                          : "${_selectedBrands.length} টি ব্র্যান্ড সিলেক্টেড — ট্যাপ করে পরিবর্তন করুন",
+                      style: GoogleFonts.hindSiliguri(
+                        color: _selectedBrands.isNotEmpty ? cAccent : cMuted,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded, color: cMuted, size: 20),
+            ],
+          ),
+        ),
+      ),
+      const SizedBox(height: 14),
       _buildCard(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         _buildHeading("⚙️ সেটআপ"),
         const SizedBox(height: 12),
@@ -801,31 +1049,71 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
             ),
           )
         else ...[
-          // Cascading Brand Dropdown
-          DropdownButtonFormField<String>(
-            value: _selectedBrandName,
-            dropdownColor: cCard,
-            style: GoogleFonts.hindSiliguri(color: cText, fontSize: 14),
-            decoration: InputDecoration(
-              labelText: "থাই অ্যালুমিনিয়াম ব্র্যান্ড সিলেক্ট করুন",
-              labelStyle: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 13),
-              filled: true, fillColor: const Color(0xFF12151F),
-              enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: cBorder)),
-              focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: cAccent)),
+          // Cascading Brand Dropdown with discount badge
+          Row(children: [
+            Expanded(
+              child: DropdownButtonFormField<String>(
+                value: _selectedBrandName,
+                dropdownColor: cCard,
+                style: GoogleFonts.hindSiliguri(color: cText, fontSize: 14),
+                decoration: InputDecoration(
+                  labelText: "থাই অ্যালুমিনিয়াম ব্র্যান্ড সিলেক্ট করুন",
+                  labelStyle: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 13),
+                  filled: true, fillColor: const Color(0xFF12151F),
+                  enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: cBorder)),
+                  focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: cAccent)),
+                ),
+                items: brandsList.map((v) =>
+                    DropdownMenuItem<String>(value: v, child: Text(v))).toList(),
+                onChanged: (v) {
+                  setState(() {
+                    _selectedBrandName = v;
+                    _updateColorsForBrand();
+                  });
+                },
+              ),
             ),
-            items: brandsList.map((v) =>
-                DropdownMenuItem<String>(value: v, child: Text(v))).toList(),
-            onChanged: (v) {
-              setState(() {
-                _selectedBrandName = v;
-                _updateColorsForBrand();
-              });
-            },
-          ),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: () => _showStep1DiscountDialog(),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                decoration: BoxDecoration(
+                  color: _brandDiscount > 0
+                      ? cGreen.withOpacity(0.15)
+                      : cBorder.withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: _brandDiscount > 0
+                        ? cGreen.withOpacity(0.4)
+                        : cBorder,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _brandDiscount > 0
+                          ? "-${_brandDiscount.toStringAsFixed(0)}%"
+                          : "0%",
+                      style: GoogleFonts.inter(
+                        color: _brandDiscount > 0 ? cGreen : cMuted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(Icons.edit_rounded,
+                        color: _brandDiscount > 0 ? cGreen : cMuted, size: 12),
+                  ],
+                ),
+              ),
+            ),
+          ]),
           const SizedBox(height: 12),
           // Cascading Color Dropdown
           DropdownButtonFormField<String>(
@@ -971,7 +1259,14 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                     Text("W: ${w['w']}\"  ×  H: ${w['h']}\"  ×  Qty: ${w['qty']}",
                         style: GoogleFonts.inter(color: cMuted, fontSize: 12)),
                     TextButton(
-                      onPressed: () => setState(() => _windowsList.removeAt(idx)),
+                      onPressed: () => setState(() {
+                        _windowsList.removeAt(idx);
+                        // Renumber remaining windows
+                        for (int i = 0; i < _windowsList.length; i++) {
+                          _windowsList[i]['name'] = "Window ${i + 1}";
+                        }
+                        _winNameController.text = "Window ${_windowsList.length + 1}";
+                      }),
                       style: TextButton.styleFrom(
                           padding: EdgeInsets.zero,
                           minimumSize: const Size(40, 24),
@@ -1046,16 +1341,58 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           const SizedBox(height: 12),
           _buildAluBreakdownTable(),
           const SizedBox(height: 16),
-          if (_brandDiscount > 0) ...[
-            Text(
-              "অ্যালুমিনিয়াম (মূল দাম): ৳ ${_fmtTk(_getCalculation().calcAluTotal().toDouble())}",
-              style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 13, decoration: TextDecoration.lineThrough)),
-            const SizedBox(height: 4),
-            Text(
-              "ডিসকাউন্ট (-${_brandDiscount.toStringAsFixed(0)}%): ৳ ${_fmtTk((_getCalculation().calcAluTotal() - _calcAluTotal()).toDouble())}",
-              style: GoogleFonts.hindSiliguri(color: cYellow, fontSize: 12)),
-            const SizedBox(height: 4),
-          ],
+          GestureDetector(
+            onTap: () => _showStep1DiscountDialog(),
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: _brandDiscount > 0
+                    ? cYellow.withOpacity(0.08)
+                    : cBorder.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: _brandDiscount > 0
+                      ? cYellow.withOpacity(0.3)
+                      : cBorder,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.local_offer_rounded,
+                          color: _brandDiscount > 0 ? cYellow : cMuted, size: 16),
+                      const SizedBox(width: 6),
+                      Text(
+                        _brandDiscount > 0
+                            ? "ডিসকাউন্ট (-${_brandDiscount.toStringAsFixed(0)}%)"
+                            : "ডিসকাউন্ট (0%)",
+                        style: GoogleFonts.hindSiliguri(
+                          color: _brandDiscount > 0 ? cYellow : cMuted,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const Spacer(),
+                      Icon(Icons.edit_rounded,
+                          color: _brandDiscount > 0 ? cYellow : cMuted, size: 14),
+                    ],
+                  ),
+                  if (_brandDiscount > 0) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      "মূল দাম: ৳ ${_fmtTk(_getCalculation().calcAluTotal().toDouble())}",
+                      style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 12, decoration: TextDecoration.lineThrough)),
+                    const SizedBox(height: 2),
+                    Text(
+                      "ছাড়: -৳ ${_fmtTk((_getCalculation().calcAluTotal() - _calcAluTotal()).toDouble())}",
+                      style: GoogleFonts.hindSiliguri(color: cGreen, fontSize: 12)),
+                  ],
+                ],
+              ),
+            ),
+          ),
           Text(
             "অ্যালুমিনিয়াম সাবটোটাল: ৳ ${_fmtTk(_calcAluTotal().toDouble())}",
             style: GoogleFonts.hindSiliguri(color: cGreen, fontWeight: FontWeight.bold, fontSize: 15)),
@@ -1422,7 +1759,12 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
             Expanded(child: _buildCompactDropdown(
               label: "ব্র্যান্ড",
               value: _selectedBrandName,
-              items: _thaiColorSets.map((e) => e.brand).toSet().toList(),
+              items: (() {
+                final allB = _thaiColorSets.map((e) => e.brand).toSet().toList();
+                return _selectedBrands.isEmpty
+                    ? allB
+                    : allB.where((b) => _selectedBrands.contains(b)).toList();
+              })(),
               onChanged: (v) => setState(() {
                 _selectedBrandName = v;
                 _updateColorsForBrand();

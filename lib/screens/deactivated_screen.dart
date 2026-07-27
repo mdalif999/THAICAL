@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/database_service.dart';
@@ -168,78 +169,141 @@ class _DeactivatedScreenState extends State<DeactivatedScreen> {
                               ),
                             ],
                             const SizedBox(height: 24),
+                            // ── bKash Renewal Instructions ──
+                            GestureDetector(
+                              onTap: () async {
+                                await Clipboard.setData(const ClipboardData(text: "01710460274"));
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text("নম্বর কপি হয়েছে!",
+                                          style: GoogleFonts.hindSiliguri(color: Colors.white, fontSize: 13)),
+                                      backgroundColor: cAccent,
+                                      duration: const Duration(seconds: 2),
+                                    ),
+                                  );
+                                }
+                              },
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: cAccent2.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: cAccent2.withOpacity(0.3)),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(Icons.info_outline_rounded, color: cAccent2, size: 16),
+                                        const SizedBox(width: 6),
+                                        Text("রিনিউ করতে:",
+                                            style: GoogleFonts.hindSiliguri(color: cAccent2, fontSize: 13, fontWeight: FontWeight.bold)),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      "১) ",
+                                      style: GoogleFonts.hindSiliguri(color: cText, fontSize: 12),
+                                    ),
+                                    Text.rich(
+                                      TextSpan(children: [
+                                        TextSpan(text: "01710460274", style: GoogleFonts.inter(color: cAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                                        TextSpan(text: " নম্বরে bKash করুন (ট্যাপ করুন)", style: GoogleFonts.hindSiliguri(color: cText, fontSize: 12)),
+                                      ]),
+                                    ),
+                                    Text(
+                                      "২) bKash স্ক্রিনশট নিন\n৩) WhatsApp এ 01710460274 নম্বরে পাঠান",
+                                      style: GoogleFonts.hindSiliguri(color: cText, fontSize: 12, height: 1.5),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 24),
                             const Divider(color: cBorder),
                             const SizedBox(height: 24),
-                            ListTile(
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              tileColor: const Color(0xFF12151F),
-                              leading: const Icon(Icons.chat_rounded, color: Color(0xFF25D366)),
-                              title: Text("WhatsApp-এ যোগাযোগ", style: GoogleFonts.hindSiliguri(color: cText, fontSize: 13)),
-                              subtitle: Text("01710460274", style: GoogleFonts.inter(color: cMuted, fontSize: 11)),
-                              onTap: () async {
-                                final uri = Uri.parse("https://wa.me/8801710460274");
-                                try {
-                                  await launchUrl(uri, mode: LaunchMode.externalApplication);
-                                } catch (e) {
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text("WhatsApp খুলতে পারা যায়নি। WhatsApp ইনস্টল আছে কিনা চেক করুন।",
-                                            style: GoogleFonts.hindSiliguri(color: Colors.white, fontSize: 13)),
-                                        backgroundColor: cAccent2,
-                                      ),
-                                    );
+                            Material(
+                              color: Colors.transparent,
+                              child: ListTile(
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                tileColor: const Color(0xFF12151F),
+                                leading: const Icon(Icons.chat_rounded, color: Color(0xFF25D366)),
+                                title: Text("WhatsApp-এ যোগাযোগ", style: GoogleFonts.hindSiliguri(color: cText, fontSize: 13)),
+                                subtitle: Text("01710460274", style: GoogleFonts.inter(color: cMuted, fontSize: 11)),
+                                onTap: () async {
+                                  final uri = Uri.parse("https://wa.me/8801710460274");
+                                  try {
+                                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                  } catch (e) {
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text("WhatsApp খুলতে পারা যায়নি। WhatsApp ইনস্টল আছে কিনা চেক করুন।",
+                                              style: GoogleFonts.hindSiliguri(color: Colors.white, fontSize: 13)),
+                                          backgroundColor: cAccent2,
+                                        ),
+                                      );
+                                    }
                                   }
-                                }
-                              },
+                                },
+                              ),
                             ),
                             const SizedBox(height: 8),
-                            ListTile(
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              tileColor: const Color(0xFF12151F),
-                              leading: const Icon(Icons.call_rounded, color: cAccent),
-                              title: Text("কল করুন (১)", style: GoogleFonts.hindSiliguri(color: cText, fontSize: 13)),
-                              subtitle: Text("01305232039", style: GoogleFonts.inter(color: cMuted, fontSize: 11)),
-                              onTap: () async {
-                                final uri = Uri.parse("tel:+8801305232039");
-                                try {
-                                  await launchUrl(uri);
-                                } catch (e) {
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text("ফোন ডায়ালার খুলতে পারা যায়নি।",
-                                            style: GoogleFonts.hindSiliguri(color: Colors.white, fontSize: 13)),
-                                        backgroundColor: cAccent2,
-                                      ),
-                                    );
+                            Material(
+                              color: Colors.transparent,
+                              child: ListTile(
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                tileColor: const Color(0xFF12151F),
+                                leading: const Icon(Icons.call_rounded, color: cAccent),
+                                title: Text("কল করুন (১)", style: GoogleFonts.hindSiliguri(color: cText, fontSize: 13)),
+                                subtitle: Text("01305232039", style: GoogleFonts.inter(color: cMuted, fontSize: 11)),
+                                onTap: () async {
+                                  final uri = Uri.parse("tel:+8801305232039");
+                                  try {
+                                    await launchUrl(uri);
+                                  } catch (e) {
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text("ফোন ডায়ালার খুলতে পারা যায়নি।",
+                                              style: GoogleFonts.hindSiliguri(color: Colors.white, fontSize: 13)),
+                                          backgroundColor: cAccent2,
+                                        ),
+                                      );
+                                    }
                                   }
-                                }
-                              },
+                                },
+                              ),
                             ),
                             const SizedBox(height: 8),
-                            ListTile(
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              tileColor: const Color(0xFF12151F),
-                              leading: const Icon(Icons.call_rounded, color: cAccent),
-                              title: Text("কল করুন (২)", style: GoogleFonts.hindSiliguri(color: cText, fontSize: 13)),
-                              subtitle: Text("01787203830", style: GoogleFonts.inter(color: cMuted, fontSize: 11)),
-                              onTap: () async {
-                                final uri = Uri.parse("tel:+8801787203830");
-                                try {
-                                  await launchUrl(uri);
-                                } catch (e) {
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text("ফোন ডায়ালার খুলতে পারা যায়নি।",
-                                            style: GoogleFonts.hindSiliguri(color: Colors.white, fontSize: 13)),
-                                        backgroundColor: cAccent2,
-                                      ),
-                                    );
+                            Material(
+                              color: Colors.transparent,
+                              child: ListTile(
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                tileColor: const Color(0xFF12151F),
+                                leading: const Icon(Icons.call_rounded, color: cAccent),
+                                title: Text("কল করুন (২)", style: GoogleFonts.hindSiliguri(color: cText, fontSize: 13)),
+                                subtitle: Text("01787203830", style: GoogleFonts.inter(color: cMuted, fontSize: 11)),
+                                onTap: () async {
+                                  final uri = Uri.parse("tel:+8801787203830");
+                                  try {
+                                    await launchUrl(uri);
+                                  } catch (e) {
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text("ফোন ডায়ালার খুলতে পারা যায়নি।",
+                                              style: GoogleFonts.hindSiliguri(color: Colors.white, fontSize: 13)),
+                                          backgroundColor: cAccent2,
+                                        ),
+                                      );
+                                    }
                                   }
-                                }
-                              },
+                                },
+                              ),
                             ),
                           ],
                         ),

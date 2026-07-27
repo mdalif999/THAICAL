@@ -1219,8 +1219,7 @@ class DatabaseService {
     final prefs = await SharedPreferences.getInstance();
     final current = await getBrandDiscounts();
     current[brand] = discount;
-    final encoded = current.map((k, v) => MapEntry(k, v));
-    await prefs.setString(_brandDiscountsKey, encoded.toString());
+    await prefs.setString(_brandDiscountsKey, jsonEncode(current));
   }
 
   Future<Map<String, double>> getBrandDiscounts() async {
@@ -1228,19 +1227,8 @@ class DatabaseService {
     final raw = prefs.getString(_brandDiscountsKey);
     if (raw == null || raw.isEmpty) return {};
     try {
-      final Map<String, double> result = {};
-      final content = raw.substring(1, raw.length - 1); // remove { }
-      if (content.isEmpty) return {};
-      final pairs = content.split(', ');
-      for (var pair in pairs) {
-        final kv = pair.split(': ');
-        if (kv.length == 2) {
-          final key = kv[0].trim();
-          final val = double.tryParse(kv[1].trim());
-          if (val != null) result[key] = val;
-        }
-      }
-      return result;
+      final Map<String, dynamic> decoded = jsonDecode(raw);
+      return decoded.map((k, v) => MapEntry(k, (v as num).toDouble()));
     } catch (_) {
       return {};
     }
@@ -1249,6 +1237,19 @@ class DatabaseService {
   Future<double> getBrandDiscount(String brand) async {
     final discounts = await getBrandDiscounts();
     return discounts[brand] ?? 0;
+  }
+
+  // ── Selected Brands Filter ──
+  static const String _selectedBrandsKey = 'selected_brands';
+
+  Future<void> saveSelectedBrands(List<String> brands) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_selectedBrandsKey, brands);
+  }
+
+  Future<List<String>> getSelectedBrands() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getStringList(_selectedBrandsKey) ?? [];
   }
 
   // ── Message Check (Supabase `messages` table) ──

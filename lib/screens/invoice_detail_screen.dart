@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
@@ -416,13 +417,13 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     final color = invoice['color']?.toString() ?? '';
     final glassBrand = invoice['glassBrand']?.toString() ?? '';
     final profileSize = invoice['profile_size']?.toString() ?? '';
-    final thickness = (invoice['thickness'] as num?)?.toDouble() ?? 0;
     final totalSft = (invoice['totalSft'] as num?)?.toDouble() ?? 0;
-    final aluTotal = (invoice['aluTotal'] as num?)?.toDouble() ?? 0;
+    final aluTotalAfterDiscount = (invoice['aluTotal'] as num?)?.toDouble() ?? 0;
+    final brandDiscount = (invoice['brandDiscount'] as num?)?.toDouble() ?? 0;
+    final aluTotal = brandDiscount > 0 ? aluTotalAfterDiscount / (1 - brandDiscount / 100) : aluTotalAfterDiscount;
     final glassTotal = (invoice['glassTotal'] as num?)?.toDouble() ?? 0;
     final glassRate = (invoice['glassRate'] as num?)?.toDouble() ?? 0;
     final hwTotal = (invoice['hwTotal'] as num?)?.toDouble() ?? 0;
-    final hwRate = (invoice['hwRate'] as num?)?.toDouble() ?? 25;
     final labor = (invoice['labor'] as num?)?.toDouble() ?? 0;
     final laborRate = (invoice['laborRate'] as num?)?.toDouble() ?? 0;
     final fare = (invoice['fare'] as num?)?.toDouble() ?? 0;
@@ -432,7 +433,10 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     final windows = (invoice['windows'] as List?) ?? [];
     final cuts = (invoice['cuts'] as Map?) ?? {};
     final cutPrices = (invoice['cutPrices'] as Map?) ?? {};
-    final dateStr = (invoice['date']?.toString() ?? '').split('T').first;
+    final dateStr = (invoice['date']?.toString() ?? '');
+    final formattedDate = dateStr.isNotEmpty
+        ? DateFormat('dd-MM-yyyy hh:mm a').format(DateTime.parse(dateStr).toLocal())
+        : '';
     final is4Inch = profileSize.contains('4');
 
     // Window list
@@ -448,7 +452,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
         final sft = (width * height / 144.0) * qty;
         windowBuffer.writeln("  ${i + 1}. ${w['name']} — ${width.toStringAsFixed(0)}\" x ${height.toStringAsFixed(0)}\" x ${qty}টি = ${sft.toStringAsFixed(2)} Sft");
       }
-      if (totalSft > 0) windowBuffer.writeln("  মোট: ${totalSft.toStringAsFixed(2)} Sft");
+      windowBuffer.writeln("  মোট: ${totalSft.toStringAsFixed(2)} Sft");
       windowBuffer.writeln();
     }
 
@@ -475,11 +479,11 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
         cutItems.add(['N/H (নেট হ্যান্ডেল)', cuts['nh'], cutPrices['nb']]);
       }
 
+      final specInches = WindowCalculation.calcSpecLengthInches(invoice['spec_length']?.toString());
       for (var item in cutItems) {
         final label = item[0] as String;
         final inch = (item[1] as num?)?.toDouble() ?? 0;
         final pricePerBar = (item[2] as num?)?.toInt() ?? 0;
-        final specInches = WindowCalculation.calcSpecLengthInches(invoice['spec_length']?.toString());
         final bars = inch / specInches;
         final totalCut = (bars * pricePerBar).round();
         if (inch > 0) {
@@ -488,7 +492,11 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
         }
       }
       cutBuffer.writeln("  -------------------");
-      cutBuffer.writeln("  অ্যালুমিনিয়াম মোট: ৳${_fmtTk(aluTotal)}");
+      if (brandDiscount > 0) {
+        cutBuffer.writeln("  অ্যালুমিনিয়াম (মূল্য): ৳${_fmtTk(aluTotal)}");
+        cutBuffer.writeln("  ডিসকাউন্ট (-${brandDiscount.toStringAsFixed(0)}%): -৳${_fmtTk(aluTotal - aluTotalAfterDiscount)}");
+      }
+      cutBuffer.writeln("  অ্যালুমিনিয়াম মোট: ৳${_fmtTk(aluTotalAfterDiscount)}");
       cutBuffer.writeln();
     }
 
@@ -504,55 +512,53 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
       glassBuffer.writeln();
     }
 
-    // Main message
-    final buffer = StringBuffer();
-    buffer.writeln("*Thai Calc Pro - বিল রশিদ*");
-    buffer.writeln("------------------------------------");
-    buffer.writeln();
-    buffer.writeln("কাস্টমার: $name");
-    if (phone.isNotEmpty) buffer.writeln("ফোন: $phone");
-    buffer.writeln("তারিখ: $dateStr");
-    buffer.writeln();
-    buffer.writeln("====================================");
-    buffer.write(windowBuffer);
-    buffer.writeln("====================================");
-    buffer.write(cutBuffer);
-    buffer.writeln("====================================");
-    buffer.write(glassBuffer);
     // Hardware breakdown
+    final hwBuffer = StringBuffer();
     final hwItems = invoice['hwItems'] as List?;
     if (hwItems != null && hwItems.isNotEmpty) {
-      buffer.writeln("হার্ডওয়্যার হিসাব:");
-      buffer.writeln("--------------------");
+      hwBuffer.writeln("হার্ডওয়্যার হিসাব:");
+      hwBuffer.writeln("--------------------");
       for (var item in hwItems) {
         final hwItem = item as Map<String, dynamic>;
         final cost = (hwItem['cost'] as num?)?.toDouble() ?? 0;
         final rate = (hwItem['rate'] as num?)?.toDouble() ?? 0;
-        buffer.writeln("  ${hwItem['name']} — ${hwItem['qty']} ${hwItem['unit']} × ৳${_fmtTk(rate)} = ৳${_fmtTk(cost)}");
+        hwBuffer.writeln("  ${hwItem['name']} — ${hwItem['qty']} ${hwItem['unit']} × ৳${_fmtTk(rate)} = ৳${_fmtTk(cost)}");
       }
-      buffer.writeln("  -------------------");
-      buffer.writeln("  হার্ডওয়্যার মোট: ৳${_fmtTk(hwTotal)}");
-      buffer.writeln();
+      hwBuffer.writeln("  -------------------");
+      hwBuffer.writeln("  হার্ডওয়্যার মোট: ৳${_fmtTk(hwTotal)}");
+      hwBuffer.writeln();
     } else if (hwTotal > 0) {
-      buffer.writeln("হার্ডওয়্যার: ৳${_fmtTk(hwTotal)}");
+      hwBuffer.writeln("হার্ডওয়্যার: ৳${_fmtTk(hwTotal)}");
+      hwBuffer.writeln();
     }
-    if (labor > 0) {
-      buffer.writeln("মজুরি/ফিটিং: ৳${_fmtTk(labor)}");
-      if (laborRate > 0) buffer.writeln("  (${totalSft.toStringAsFixed(1)} Sft x ৳${_fmtTk(laborRate)})");
-    }
-    if (fare > 0) {
-      buffer.writeln("গাড়ি ভাড়া: ৳${_fmtTk(fare)}");
-    }
-    buffer.writeln();
-    buffer.writeln("====================================");
-    buffer.writeln("*সর্বমোট বিল: ৳${_fmtTk(total)}*");
-    if (advance > 0) buffer.writeln("অগ্রিম জমা: ৳${_fmtTk(advance)}");
-    buffer.writeln("*বাকি (Due): ৳${_fmtTk(due)}*");
-    buffer.writeln("====================================");
-    buffer.writeln();
-    buffer.writeln("Thai Calc Pro ব্যবহার করার জন্য ধন্যবাদ!");
 
-    final message = buffer.toString();
+    // Main message — step 4 এর মতো একই ফরম্যাট
+    final message = "*Thai Calc Pro - বিল রশিদ*\n"
+        "------------------------------------\n"
+        "\n"
+        "কাস্টমার: $name\n"
+        "${phone.isNotEmpty ? "ফোন: $phone\n" : ""}"
+        "তারিখ: $formattedDate\n"
+        "\n"
+        "====================================\n"
+        "${windowBuffer}"
+        "====================================\n"
+        "${cutBuffer}"
+        "${brandDiscount > 0 ? "  ডিসকাউন্ট (-${brandDiscount.toStringAsFixed(0)}%)\n" : ""}"
+        "====================================\n"
+        "${glassBuffer}"
+        "${hwBuffer}"
+        "মজুরি/ফিটিং: ৳${_fmtTk(labor)}\n"
+        "${fare > 0 ? "গাড়ি ভাড়া: ৳${_fmtTk(fare)}\n" : ""}"
+        "\n"
+        "====================================\n"
+        "*সর্বমোট বিল: ৳${_fmtTk(total)}*\n"
+        "${advance > 0 ? "অগ্রিম জমা: ৳${_fmtTk(advance)}\n" : ""}"
+        "*বাকি (Due): ৳${_fmtTk(due)}*\n"
+        "====================================\n"
+        "\n"
+        "Thai Calc Pro ব্যবহার করার জন্য ধন্যবাদ!";
+
     final encodedMessage = Uri.encodeComponent(message);
 
     var cleanPhone = phone.replaceAll(RegExp(r'\D'), '');

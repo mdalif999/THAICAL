@@ -67,7 +67,7 @@ class _PriceListScreenState extends State<PriceListScreen> with SingleTickerProv
 
   Future<void> _showDiscountDialog(String brand) async {
     final currentDiscount = _brandDiscounts[brand] ?? 0;
-    final controller = TextEditingController(text: currentDiscount > 0 ? currentDiscount.toStringAsFixed(0) : '');
+    final controller = TextEditingController(text: currentDiscount > 0 ? currentDiscount.toString() : '');
 
     final result = await showDialog<double>(
       context: context,
@@ -105,7 +105,7 @@ class _PriceListScreenState extends State<PriceListScreen> with SingleTickerProv
             ),
             const SizedBox(height: 8),
             Text(
-              "0 = কোনো ডিসকাউন্ট নেই",
+              "0 = কোনো ডিসকাউন্ট নেই (0-100%)",
               style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11),
             ),
           ],
@@ -124,7 +124,7 @@ class _PriceListScreenState extends State<PriceListScreen> with SingleTickerProv
             ),
           ElevatedButton(
             onPressed: () {
-              final val = double.tryParse(controller.text) ?? 0;
+              final val = (double.tryParse(controller.text) ?? 0).clamp(0.0, 100.0);
               Navigator.pop(ctx, val);
             },
             style: ElevatedButton.styleFrom(backgroundColor: cAccent),
@@ -134,6 +134,7 @@ class _PriceListScreenState extends State<PriceListScreen> with SingleTickerProv
       ),
     );
 
+    controller.dispose();
     if (result != null && mounted) {
       await DatabaseService.instance.saveBrandDiscount(brand, result);
       setState(() {
@@ -207,9 +208,32 @@ class _PriceListScreenState extends State<PriceListScreen> with SingleTickerProv
 
     return ListView.builder(
       padding: const EdgeInsets.all(12),
-      itemCount: grouped.length,
+      itemCount: grouped.length + 1,
       itemBuilder: (ctx, brandIdx) {
-        final brand = grouped.keys.elementAt(brandIdx);
+        if (brandIdx == 0) {
+          return Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: cYellow.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: cYellow.withOpacity(0.3)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline_rounded, color: cYellow, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    "এগুলো কোম্পানির মূল দাম। প্রতিটি ব্র্যান্ডের উপর ট্যাপ করে আপনার পছন্দের ডিসকাউন্ট (%) দিন — অটো সেভ হবে। অথবা হিসাবের সময়ও প্রতিব্র্যান্ডে পারসেন্টেজ দিলে সেটাও অটো সেভ হয়ে থাকবে। ধাপ ১ ও ধাপ ২ থেকে ডিসকাউন্ট পরিবর্তন করা যাবে।",
+                    style: GoogleFonts.hindSiliguri(color: cYellow, fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+        final brand = grouped.keys.elementAt(brandIdx - 1);
         final items = grouped[brand]!;
         final discount = _brandDiscounts[brand] ?? 0;
         return Container(
@@ -255,6 +279,11 @@ class _PriceListScreenState extends State<PriceListScreen> with SingleTickerProv
                             ),
                             const SizedBox(width: 8),
                           ],
+                          Text(
+                            "ডিসকাউন্ট এডিট করুন",
+                            style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11),
+                          ),
+                          const SizedBox(width: 4),
                           Icon(Icons.edit_rounded, color: cMuted, size: 16),
                         ],
                       ),
