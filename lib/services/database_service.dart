@@ -13,7 +13,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:uuid/uuid.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
-class DatabaseService {
+class DatabaseService with WidgetsBindingObserver {
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
   static final String supabaseUrl = dotenv.env['SUPABASE_URL'] ?? '';
   static final String supabaseKey = dotenv.env['SUPABASE_KEY'] ?? '';
@@ -52,6 +52,7 @@ class DatabaseService {
   Map<String, dynamic>? get currentUserProfile => currentUserProfileNotifier.value;
 
   Future<void> initialize() async {
+    WidgetsBinding.instance.addObserver(this);
     final prefs = await SharedPreferences.getInstance();
     final now = DateTime.now().toUtc();
 
@@ -493,6 +494,74 @@ class DatabaseService {
   RealtimeChannel? _sessionChannel;
   Timer? _heartbeatTimer;
 
+  String? _currentSessionLogId;
+  DateTime? _sessionStartLocalTime;
+
+  Future<void> _startNewSessionLog() async {
+    if (isFallbackMode) return;
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return;
+
+    await _endCurrentSessionLog();
+
+    try {
+      final now = DateTime.now().toUtc();
+      final sessionUuid = const Uuid().v4();
+      _sessionStartLocalTime = DateTime.now();
+
+      final data = await _client.from('session_logs').insert({
+        'user_id': userId,
+        'session_id': sessionUuid,
+        'started_at': now.toIso8601String(),
+        'last_active_at': now.toIso8601String(),
+        'duration_seconds': 0,
+      }).select('id').single();
+
+      _currentSessionLogId = data['id']?.toString();
+      _log('Session log started: $_currentSessionLogId');
+    } catch (e) {
+      _log('Failed to start session log (perhaps table not created yet): $e');
+    }
+  }
+
+  Future<void> _updateSessionLog() async {
+    if (isFallbackMode) return;
+    final logId = _currentSessionLogId;
+    final startTime = _sessionStartLocalTime;
+    if (logId == null || startTime == null) return;
+    try {
+      final now = DateTime.now().toUtc();
+      final diff = DateTime.now().difference(startTime);
+      final durationSeconds = diff.inSeconds;
+
+      if (durationSeconds >= 0) {
+        await _client.from('session_logs').update({
+          'last_active_at': now.toIso8601String(),
+          'duration_seconds': durationSeconds,
+        }).eq('id', logId);
+      }
+    } catch (e) {
+      _log('Failed to update session log: $e');
+    }
+  }
+
+  Future<void> _endCurrentSessionLog() async {
+    if (_currentSessionLogId != null) {
+      await _updateSessionLog();
+      _currentSessionLogId = null;
+      _sessionStartLocalTime = null;
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      _endCurrentSessionLog();
+    } else if (state == AppLifecycleState.resumed) {
+      _startNewSessionLog();
+    }
+  }
+
   void startSessionMonitoring() {
     // ✅ আগে থেকে কোনো channel থাকলে সেটা আগে unsubscribe করো
     _sessionChannel?.unsubscribe();
@@ -571,14 +640,17 @@ class DatabaseService {
     if (isFallbackMode) return;
     _heartbeatTimer?.cancel();
     _sendHeartbeat();
+    _startNewSessionLog();
     _heartbeatTimer = Timer.periodic(const Duration(minutes: 4), (_) {
       _sendHeartbeat();
+      _updateSessionLog();
     });
   }
 
   void stopHeartbeat() {
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
+    _endCurrentSessionLog();
   }
 
   Future<void> _sendHeartbeat() async {
@@ -619,6 +691,26 @@ class DatabaseService {
         await _client.auth.signOut();
       } catch (_) {}
     }
+  }
+
+  Future<void> deleteAccount() async {
+    if (isFallbackMode) {
+      currentUserProfileNotifier.value = null;
+      await _clearAuthDataOnly();
+      return;
+    }
+
+    try {
+      if (!await _hasInternet()) {
+        throw Exception('ইন্টারনেট সংযোগ নেই! অনুগ্রহ করে ইন্টারনেট অন করে আবার চেষ্টা করুন।');
+      }
+      await _client.rpc('delete_user_account');
+    } catch (e) {
+      _log('Delete account error: $e');
+      rethrow;
+    }
+
+    await logout();
   }
 
   // ── Known Device ID: Forget Password er jonno ──
@@ -1250,6 +1342,35 @@ class DatabaseService {
   Future<List<String>> getSelectedBrands() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getStringList(_selectedBrandsKey) ?? [];
+  }
+
+  // ── Custom Glass Rates ──
+  static const String _glassRatesKey = 'custom_glass_rates';
+
+  Future<void> saveGlassRate(String glassBrand, double rate) async {
+    final prefs = await SharedPreferences.getInstance();
+    final current = await getGlassRates();
+    current[glassBrand] = rate;
+    await prefs.setString(_glassRatesKey, jsonEncode(current));
+  }
+
+  Future<Map<String, double>> getGlassRates() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_glassRatesKey);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final Map<String, dynamic> decoded = jsonDecode(raw);
+      return decoded.map((k, v) => MapEntry(k, (v as num).toDouble()));
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Future<void> removeGlassRate(String glassBrand) async {
+    final prefs = await SharedPreferences.getInstance();
+    final current = await getGlassRates();
+    current.remove(glassBrand);
+    await prefs.setString(_glassRatesKey, jsonEncode(current));
   }
 
   // ── Message Check (Supabase `messages` table) ──

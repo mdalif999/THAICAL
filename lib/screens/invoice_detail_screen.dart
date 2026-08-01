@@ -370,6 +370,11 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
                       const Divider(color: cBorder, height: 20),
                       _buildMoneyRow("মোট বিল (Grand Total)", (invoice['total'] as num).toDouble(),
                           isBold: true, color: cAccent, size: 16),
+                      if (totalSft > 0) ...[
+                        const SizedBox(height: 4),
+                        _buildMoneyRow("গড় খরচ / Sft", (invoice['total'] as num).toDouble() / totalSft,
+                            isBold: false, color: cText.withOpacity(0.85), size: 13),
+                      ],
                       if (invoice['advance'] != null && (invoice['advance'] as num).toDouble() > 0)
                         _buildMoneyRow("(−) অগ্রিম জমা", (invoice['advance'] as num).toDouble(), color: cYellow),
                       const Divider(color: cAccent2, height: 20, thickness: 1.5),
@@ -553,6 +558,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
         "\n"
         "====================================\n"
         "*সর্বমোট বিল: ৳${_fmtTk(total)}*\n"
+        "${totalSft > 0 ? "গড় খরচ / Sft: ৳${_fmtTk(total / totalSft)}\n" : ""}"
         "${advance > 0 ? "অগ্রিম জমা: ৳${_fmtTk(advance)}\n" : ""}"
         "*বাকি (Due): ৳${_fmtTk(due)}*\n"
         "====================================\n"

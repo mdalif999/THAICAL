@@ -80,6 +80,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   final _customerNameController = TextEditingController();
   final _customerPhoneController = TextEditingController();
   final Map<String, double> _customHwRates = {};
+  Map<String, double> _customGlassRates = {};
   bool _isSaving = false;
 
   @override
@@ -121,6 +122,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       final hardwares = await DatabaseService.instance.getHardwarePrices();
       final discounts = await DatabaseService.instance.getBrandDiscounts();
       final savedBrands = await DatabaseService.instance.getSelectedBrands();
+      final glassRates = await DatabaseService.instance.getGlassRates();
 
       setState(() {
         _thaiColorSets = thais;
@@ -128,6 +130,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         _hardwarePrices = hardwares;
         _allBrandDiscounts = discounts;
         _selectedBrands = savedBrands;
+        _customGlassRates = glassRates;
 
         if (glasses.isNotEmpty) {
           _selectedGlassBrand = glasses.first;
@@ -230,7 +233,6 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       ),
     );
 
-    controller.dispose();
     if (result != null && mounted) {
       await DatabaseService.instance.saveBrandDiscount(brand, result);
       setState(() {
@@ -238,6 +240,102 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         _allBrandDiscounts[brand] = result;
       });
     }
+    Future.delayed(const Duration(milliseconds: 300), () => controller.dispose());
+  }
+
+  GlassBrand? _getActiveGlassBrand() {
+    if (_selectedGlassBrand == null) return null;
+    final rate = _customGlassRates[_selectedGlassBrand!.brandName] ?? _selectedGlassBrand!.pricePerSft.toDouble();
+    return GlassBrand(
+      id: _selectedGlassBrand!.id,
+      brandName: _selectedGlassBrand!.brandName,
+      pricePerSft: rate.round(),
+    );
+  }
+
+  Future<void> _showGlassRateDialog() async {
+    if (_selectedGlassBrand == null) return;
+    final glass = _selectedGlassBrand!;
+    final currentRate = _customGlassRates[glass.brandName] ?? glass.pricePerSft.toDouble();
+    final controller = TextEditingController(text: currentRate.toStringAsFixed(0));
+
+    final result = await showDialog<double>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: cCard,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: cBorder),
+        ),
+        title: Text(
+          "গ্লাস রেট সেট করুন",
+          style: GoogleFonts.hindSiliguri(color: cText, fontWeight: FontWeight.bold),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "ব্র্যান্ড/টাইপ: ${glass.brandName}",
+              style: GoogleFonts.hindSiliguri(color: cAccent, fontSize: 14, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              "মূল দর (প্রাইস লিস্ট): ৳${_fmtTk(glass.pricePerSft.toDouble())} / Sft",
+              style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              style: GoogleFonts.inter(color: cText, fontSize: 16),
+              decoration: InputDecoration(
+                labelText: "দর / Sft (Tk)",
+                labelStyle: GoogleFonts.hindSiliguri(color: cMuted),
+                suffixText: "Tk",
+                suffixStyle: GoogleFonts.inter(color: cAccent, fontSize: 16, fontWeight: FontWeight.bold),
+                enabledBorder: const OutlineInputBorder(borderSide: BorderSide(color: cBorder)),
+                focusedBorder: const OutlineInputBorder(borderSide: BorderSide(color: cAccent)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, -1.0),
+            child: Text("রিসেট করুন", style: GoogleFonts.hindSiliguri(color: cRed)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text("বাতিল", style: GoogleFonts.hindSiliguri(color: cMuted)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final val = double.tryParse(controller.text) ?? 0;
+              Navigator.pop(ctx, val);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: cAccent),
+            child: Text("সেভ করুন", style: GoogleFonts.hindSiliguri(color: cBg, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null && mounted) {
+      if (result == -1.0) {
+        await DatabaseService.instance.removeGlassRate(glass.brandName);
+        setState(() {
+          _customGlassRates.remove(glass.brandName);
+        });
+      } else {
+        await DatabaseService.instance.saveGlassRate(glass.brandName, result);
+        setState(() {
+          _customGlassRates[glass.brandName] = result;
+        });
+      }
+    }
+    Future.delayed(const Duration(milliseconds: 300), () => controller.dispose());
   }
 
   Future<void> _showBrandFilterDialog() async {
@@ -404,7 +502,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     return WindowCalculation(
       windowsList: _windowsList,
       selectedThaiColorSet: _selectedThaiColorSet,
-      selectedGlassBrand: _selectedGlassBrand,
+      selectedGlassBrand: _getActiveGlassBrand(),
       hardwarePrices: _hardwarePrices,
       dlCount: _dlCount,
       swCount: _swCount,
@@ -711,6 +809,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         "\n"
         "====================================\n"
         "*সর্বমোট বিল: ৳${_fmtTk(grandTotal)}*\n"
+        "${totalSft > 0 ? "গড় খরচ / Sft: ৳${_fmtTk(grandTotal / totalSft)}\n" : ""}"
         "${advance > 0 ? "অগ্রিম জমা: ৳${_fmtTk(advance)}\n" : ""}"
         "*বাকি (Due): ৳${_fmtTk(due)}*\n"
         "====================================\n"
@@ -772,8 +871,8 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         'thickness': (_selectedThaiColorSet?.profileSize.contains('4') == true) ? 4.0 : 3.0,
         'profile_size': _selectedThaiColorSet?.profileSize ?? '3"',
         'spec_length': _selectedThaiColorSet?.specLength ?? "21'-0\"",
-        'glassBrand': _selectedGlassBrand?.brandName ?? '',
-        'glassRate': _selectedGlassBrand?.pricePerSft ?? 0,
+        'glassBrand': _getActiveGlassBrand()?.brandName ?? '',
+        'glassRate': _getActiveGlassBrand()?.pricePerSft ?? 0,
         'laborRate': double.tryParse(_laborRateController.text) ?? 0,
         'brandDiscount': _brandDiscount,
         'total': grandTotal,
@@ -1171,25 +1270,58 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           ),
           const SizedBox(height: 12),
           // Glass Brand Dropdown
-          DropdownButtonFormField<GlassBrand>(
-            value: _selectedGlassBrand,
-            dropdownColor: cCard,
-            style: GoogleFonts.hindSiliguri(color: cText, fontSize: 14),
-            decoration: InputDecoration(
-              labelText: "গ্লাস ব্র্যান্ড / টাইপ সিলেক্ট করুন",
-              labelStyle: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 13),
-              filled: true, fillColor: const Color(0xFF12151F),
-              enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: cBorder)),
-              focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: cAccent)),
+          Row(children: [
+            Expanded(
+              child: DropdownButtonFormField<GlassBrand>(
+                value: _selectedGlassBrand,
+                dropdownColor: cCard,
+                style: GoogleFonts.hindSiliguri(color: cText, fontSize: 14),
+                decoration: InputDecoration(
+                  labelText: "গ্লাস ব্র্যান্ড / টাইপ সিলেক্ট করুন",
+                  labelStyle: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 13),
+                  filled: true, fillColor: const Color(0xFF12151F),
+                  enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: cBorder)),
+                  focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: cAccent)),
+                ),
+                items: _glassBrands.map((v) =>
+                    DropdownMenuItem<GlassBrand>(value: v, child: Text(v.brandName))).toList(),
+                onChanged: (v) => setState(() => _selectedGlassBrand = v),
+              ),
             ),
-            items: _glassBrands.map((v) =>
-                DropdownMenuItem<GlassBrand>(value: v, child: Text(v.brandName))).toList(),
-            onChanged: (v) => setState(() => _selectedGlassBrand = v),
-          ),
+            if (_selectedGlassBrand != null) ...[
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () => _showGlassRateDialog(),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: cBorder.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: cBorder),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        "৳${_fmtTk(_getActiveGlassBrand()?.pricePerSft.toDouble() ?? 0)}",
+                        style: GoogleFonts.inter(
+                          color: cAccent,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.edit_rounded, color: cAccent, size: 12),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ]),
         ],
       ])),
       const SizedBox(height: 14),
@@ -1802,6 +1934,11 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           const SizedBox(height: 6),
           _buildInvoiceRow("মোট বিল (Grand Total)", grandTotal,
               isBold: true, color: cAccent, size: 16),
+          if (totalSft > 0) ...[
+            const SizedBox(height: 4),
+            _buildInvoiceRow("গড় খরচ / Sft", grandTotal / totalSft,
+                isBold: false, color: cText.withOpacity(0.85), size: 13),
+          ],
           const SizedBox(height: 4),
           _buildInvoiceRow("(−) অগ্রিম জমা", advance, color: cYellow),
           const SizedBox(height: 6),

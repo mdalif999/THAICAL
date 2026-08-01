@@ -253,6 +253,110 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  void _showDeleteAccountDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) {
+        bool isDeleting = false;
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: cCard,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: const BorderSide(color: cBorder),
+              ),
+              title: Row(
+                children: [
+                  const Icon(Icons.warning_amber_rounded, color: Color(0xFFEF4444), size: 28),
+                  const SizedBox(width: 8),
+                  Text(
+                    "অ্যাকাউন্ট ডিলিট করুন",
+                    style: GoogleFonts.hindSiliguri(
+                      color: const Color(0xFFEF4444),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
+                  ),
+                ],
+              ),
+              content: Text(
+                "সতর্কতা: আপনার অ্যাকাউন্ট ডিলিট করলে সকল হিসাব-নিকাশ, প্রোফাইল ডাটা এবং সাবস্ক্রিপশন চিরতরে মুছে যাবে। এই কাজ পরবর্তীতে আর ফেরত আনা সম্ভব হবে না।\n\nআপনি কি নিশ্চিতভাবে অ্যাকাউন্ট মুছে ফেলতে চান?",
+                style: GoogleFonts.hindSiliguri(color: cText, fontSize: 14),
+              ),
+              actions: isDeleting
+                  ? [
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(8.0),
+                          child: CircularProgressIndicator(color: Color(0xFFEF4444)),
+                        ),
+                      )
+                    ]
+                  : [
+                      TextButton(
+                        onPressed: () => Navigator.pop(dialogCtx),
+                        child: Text(
+                          "বাতিল করুন",
+                          style: GoogleFonts.hindSiliguri(color: cMuted, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFEF4444),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        onPressed: () async {
+                          setDialogState(() => isDeleting = true);
+                          try {
+                            await DatabaseService.instance.deleteAccount();
+                            if (dialogCtx.mounted) {
+                              Navigator.pop(dialogCtx); // Close dialog
+                            }
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  backgroundColor: const Color(0xFFEF4444),
+                                  content: Text(
+                                    "আপনার অ্যাকাউন্ট এবং সকল ডেটা সফলভাবে মুছে ফেলা হয়েছে।",
+                                    style: GoogleFonts.hindSiliguri(color: Colors.white),
+                                  ),
+                                ),
+                              );
+                              Navigator.pushReplacementNamed(context, '/');
+                            }
+                          } catch (e) {
+                            if (dialogCtx.mounted) {
+                              setDialogState(() => isDeleting = false);
+                            }
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  backgroundColor: const Color(0xFFEF4444),
+                                  content: Text(
+                                    "ত্রুটি: ${e.toString().replaceAll('Exception: ', '')}",
+                                    style: GoogleFonts.hindSiliguri(color: Colors.white),
+                                  ),
+                                ),
+                              );
+                            }
+                          }
+                        },
+                        child: Text(
+                          "হ্যাঁ, ডিলিট করুন",
+                          style: GoogleFonts.hindSiliguri(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _loadInvoices() async {
     setState(() => _isLoading = true);
     try {
@@ -579,6 +683,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           onTap: () async {
             await DatabaseService.instance.logout();
             if (context.mounted) Navigator.pushReplacementNamed(context, '/');
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.delete_forever_rounded, color: Color(0xFFEF4444)),
+          title: Text("অ্যাকাউন্ট ডিলিট করুন", style: GoogleFonts.hindSiliguri(color: const Color(0xFFEF4444), fontWeight: FontWeight.bold)),
+          onTap: () {
+            Navigator.pop(context); // close drawer first
+            _showDeleteAccountDialog();
           },
         ),
         ListTile(
