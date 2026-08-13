@@ -548,7 +548,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
 
                         // TabBarView Content (Constrained height for forms)
                         SizedBox(
-                          height: 310,
+                          height: 385,
                           child: TabBarView(
                             controller: _tabController,
                             children: [
@@ -605,7 +605,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                               style: GoogleFonts.hindSiliguri(color: cAccent2, fontSize: 13)),
                                         ),
                                       ),
-                                      const Spacer(),
+                                      const SizedBox(height: 12),
                                       ElevatedButton(
                                         onPressed: _isLoading ? null : _submitLogin,
                                         style: ElevatedButton.styleFrom(
@@ -633,6 +633,28 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                                 ),
                                               ),
                                       ),
+                                      const SizedBox(height: 12),
+                                      ElevatedButton(
+                                        onPressed: () => _tabController.animateTo(1),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: cCard,
+                                          foregroundColor: cAccent,
+                                          side: const BorderSide(color: cBorder),
+                                          padding: const EdgeInsets.symmetric(vertical: 14),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          elevation: 0,
+                                        ),
+                                        child: Text(
+                                          "নতুন ইউজার? রেজিস্ট্রেশন করুন",
+                                          style: GoogleFonts.hindSiliguri(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                      const Spacer(),
                                     ],
                                   ),
                                 ),

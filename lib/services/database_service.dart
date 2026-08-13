@@ -12,8 +12,9 @@ import '../models/hardware_price.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:uuid/uuid.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'session_tracker_service.dart';
 
-class DatabaseService with WidgetsBindingObserver {
+class DatabaseService {
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
   static final String supabaseUrl = dotenv.env['SUPABASE_URL'] ?? '';
   static final String supabaseKey = dotenv.env['SUPABASE_KEY'] ?? '';
@@ -52,7 +53,6 @@ class DatabaseService with WidgetsBindingObserver {
   Map<String, dynamic>? get currentUserProfile => currentUserProfileNotifier.value;
 
   Future<void> initialize() async {
-    WidgetsBinding.instance.addObserver(this);
     final prefs = await SharedPreferences.getInstance();
     final now = DateTime.now().toUtc();
 
@@ -162,12 +162,23 @@ class DatabaseService with WidgetsBindingObserver {
       if (syncWallStr != null && syncElapsedMs != null) {
         final syncWall = DateTime.parse(syncWallStr);
         final wallDiffSec = nowWall.difference(syncWall).inSeconds;
-        final elapsedDiffSec = (nowElapsedMs - syncElapsedMs) ~/ 1000;
 
-        // 5 minute tolerance for normal clock drift / NTP adjustments
-        if ((wallDiffSec - elapsedDiffSec).abs() > 300) {
-          _log("ALERT: Boot-time mismatch detected, possible clock tampering.");
-          await prefs.setBool('is_clock_tampered', true);
+        if (nowElapsedMs < syncElapsedMs) {
+          // Device rebooted/restarted. Reset the baseline to current values.
+          _log("Device reboot detected. Resetting clock sync baseline.");
+        } else {
+          final elapsedDiffSec = (nowElapsedMs - syncElapsedMs) ~/ 1000;
+
+          // 5 minute tolerance for normal clock drift / NTP adjustments
+          if ((wallDiffSec - elapsedDiffSec).abs() > 300) {
+            final isOnline = await _hasInternet();
+            if (!isOnline) {
+              _log("ALERT: Boot-time mismatch detected, possible clock tampering.");
+              await prefs.setBool('is_clock_tampered', true);
+            } else {
+              _log("Boot-time mismatch detected, but user is online. Bypassing lock.");
+            }
+          }
         }
       }
 
@@ -494,74 +505,6 @@ class DatabaseService with WidgetsBindingObserver {
   RealtimeChannel? _sessionChannel;
   Timer? _heartbeatTimer;
 
-  String? _currentSessionLogId;
-  DateTime? _sessionStartLocalTime;
-
-  Future<void> _startNewSessionLog() async {
-    if (isFallbackMode) return;
-    final userId = _client.auth.currentUser?.id;
-    if (userId == null) return;
-
-    await _endCurrentSessionLog();
-
-    try {
-      final now = DateTime.now().toUtc();
-      final sessionUuid = const Uuid().v4();
-      _sessionStartLocalTime = DateTime.now();
-
-      final data = await _client.from('session_logs').insert({
-        'user_id': userId,
-        'session_id': sessionUuid,
-        'started_at': now.toIso8601String(),
-        'last_active_at': now.toIso8601String(),
-        'duration_seconds': 0,
-      }).select('id').single();
-
-      _currentSessionLogId = data['id']?.toString();
-      _log('Session log started: $_currentSessionLogId');
-    } catch (e) {
-      _log('Failed to start session log (perhaps table not created yet): $e');
-    }
-  }
-
-  Future<void> _updateSessionLog() async {
-    if (isFallbackMode) return;
-    final logId = _currentSessionLogId;
-    final startTime = _sessionStartLocalTime;
-    if (logId == null || startTime == null) return;
-    try {
-      final now = DateTime.now().toUtc();
-      final diff = DateTime.now().difference(startTime);
-      final durationSeconds = diff.inSeconds;
-
-      if (durationSeconds >= 0) {
-        await _client.from('session_logs').update({
-          'last_active_at': now.toIso8601String(),
-          'duration_seconds': durationSeconds,
-        }).eq('id', logId);
-      }
-    } catch (e) {
-      _log('Failed to update session log: $e');
-    }
-  }
-
-  Future<void> _endCurrentSessionLog() async {
-    if (_currentSessionLogId != null) {
-      await _updateSessionLog();
-      _currentSessionLogId = null;
-      _sessionStartLocalTime = null;
-    }
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
-      _endCurrentSessionLog();
-    } else if (state == AppLifecycleState.resumed) {
-      _startNewSessionLog();
-    }
-  }
-
   void startSessionMonitoring() {
     // ✅ আগে থেকে কোনো channel থাকলে সেটা আগে unsubscribe করো
     _sessionChannel?.unsubscribe();
@@ -640,17 +583,14 @@ class DatabaseService with WidgetsBindingObserver {
     if (isFallbackMode) return;
     _heartbeatTimer?.cancel();
     _sendHeartbeat();
-    _startNewSessionLog();
-    _heartbeatTimer = Timer.periodic(const Duration(minutes: 4), (_) {
+    _heartbeatTimer = Timer.periodic(const Duration(minutes: 2), (_) {
       _sendHeartbeat();
-      _updateSessionLog();
     });
   }
 
   void stopHeartbeat() {
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
-    _endCurrentSessionLog();
   }
 
   Future<void> _sendHeartbeat() async {
@@ -669,6 +609,7 @@ class DatabaseService with WidgetsBindingObserver {
   }
 
   Future<void> logout() async {
+    await SessionTrackerService.instance.endSession();
     stopSessionMonitoring();
     stopHeartbeat();
     if (!isFallbackMode) {
@@ -869,6 +810,17 @@ class DatabaseService with WidgetsBindingObserver {
   // Offline Verification Check logic
   Future<Map<String, dynamic>> checkOfflineSubscription() async {
     final prefs = await SharedPreferences.getInstance();
+    final isOnline = await _hasInternet();
+
+    // If online, automatically try to clear clock tampering by refreshing status
+    if (isOnline && prefs.getBool('is_clock_tampered') == true) {
+      try {
+        final onlineState = await checkOnlineStatus();
+        if (onlineState['has_access'] == true) {
+          _log("Clock tampering auto-cleared because user is online.");
+        }
+      } catch (_) {}
+    }
 
     if (prefs.getBool('is_clock_tampered') == true) {
       return {'status': false, 'reason': 'tampered'};
@@ -880,8 +832,12 @@ class DatabaseService with WidgetsBindingObserver {
     if (lastKnownStr != null) {
       final lastKnown = DateTime.tryParse(lastKnownStr);
       if (lastKnown != null && now.isBefore(lastKnown)) {
-        await prefs.setBool('is_clock_tampered', true);
-        return {'status': false, 'reason': 'tampered'};
+        if (!isOnline) {
+          await prefs.setBool('is_clock_tampered', true);
+          return {'status': false, 'reason': 'tampered'};
+        } else {
+          _log("Time is before last known, but user is online. Bypassing lock.");
+        }
       }
     }
     await prefs.setString('last_known_time', now.toIso8601String());
@@ -1412,6 +1368,63 @@ class DatabaseService with WidgetsBindingObserver {
   Future<int> _getLastSeenMessageId() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getInt(_lastSeenMessageIdKey) ?? 0;
+  }
+
+  // ── Recent Messages (সেটিংস স্ক্রিনে দেখানোর জন্য, top N) ──
+  Future<List<Map<String, dynamic>>> getRecentMessages({int limit = 10}) async {
+    if (isFallbackMode) return [];
+    final hasNet = await hasInternet();
+    if (!hasNet) return [];
+
+    try {
+      final List<dynamic> data = await _client
+          .from('messages')
+          .select()
+          .order('id', ascending: false)
+          .limit(limit)
+          .timeout(const Duration(seconds: 8));
+
+      return data.map((e) => Map<String, dynamic>.from(e)).toList();
+    } catch (e) {
+      _log('getRecentMessages failed: $e');
+      return [];
+    }
+  }
+
+  // ── Password Change (active session, current password verify kore) ──
+  Future<void> changePassword({
+    required String oldPassword,
+    required String newPassword,
+  }) async {
+    if (isFallbackMode) {
+      throw Exception('ডেমো মোডে পাসওয়ার্ড পরিবর্তন সম্ভব নয়');
+    }
+    if (!await _hasInternet()) {
+      throw Exception('ইন্টারনেট সংযোগ নেই!');
+    }
+
+    final email = _client.auth.currentUser?.email;
+    if (email == null) {
+      throw Exception('লগইন সেশন পাওয়া যায়নি। আবার লগইন করুন।');
+    }
+
+    try {
+      // ✅ বর্তমান পাসওয়ার্ড সঠিক কিনা যাচাই — re-authenticate করে
+      await _client.auth.signInWithPassword(
+        email: email,
+        password: oldPassword,
+      ).timeout(const Duration(seconds: 15));
+    } catch (e) {
+      throw Exception('বর্তমান পাসওয়ার্ড সঠিক নয়!');
+    }
+
+    try {
+      await _client.auth.updateUser(
+        UserAttributes(password: newPassword),
+      ).timeout(const Duration(seconds: 15));
+    } catch (e) {
+      throw Exception('পাসওয়ার্ড পরিবর্তন ব্যর্থ হয়েছে: ${e.toString()}');
+    }
   }
 
   // ── Fallback local mock configurations ──

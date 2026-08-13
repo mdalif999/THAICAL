@@ -21,6 +21,10 @@ class _PriceListScreenState extends State<PriceListScreen> with SingleTickerProv
   Map<String, double> _brandDiscounts = {};
   bool _isLoading = true;
 
+  // Thai tab drill-down state
+  String? _selectedBrand;
+  String? _selectedModel;
+
   static const Color cBg = Color(0xFF0F1117);
   static const Color cCard = Color(0xFF1A1D27);
   static const Color cBorder = Color(0xFF2A2D3A);
@@ -149,14 +153,20 @@ class _PriceListScreenState extends State<PriceListScreen> with SingleTickerProv
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    final bool isDrilledIn = _tabController.index == 0 && (_selectedBrand != null || _selectedModel != null);
+    return PopScope(
+      canPop: !isDrilledIn,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && isDrilledIn) _handleBackPress();
+      },
+      child: Scaffold(
       backgroundColor: cBg,
       appBar: AppBar(
         backgroundColor: const Color(0xFF0B0E17),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded, color: cText),
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: _handleBackPress,
         ),
         title: Text("প্রাইস লিস্ট",
             style: GoogleFonts.hindSiliguri(fontSize: 18, fontWeight: FontWeight.bold, color: cText)),
@@ -191,26 +201,42 @@ class _PriceListScreenState extends State<PriceListScreen> with SingleTickerProv
                 _buildHardwareTab(),
               ],
             ),
+      ),
     );
   }
 
-  // ── Thai / Aluminum Tab ──
+  void _handleBackPress() {
+    if (_tabController.index == 0 && _selectedModel != null) {
+      setState(() => _selectedModel = null);
+    } else if (_tabController.index == 0 && _selectedBrand != null) {
+      setState(() => _selectedBrand = null);
+    } else {
+      Navigator.of(context).pop();
+    }
+  }
+
+  // ── Thai / Aluminum Tab (drill-down: Brand → Model → Prices) ──
   Widget _buildThaiTab() {
     if (_thaiList.isEmpty) {
       return _buildEmpty("কোনো থাই/অ্যালুমিনিয়াম দাম পাওয়া যায়নি");
     }
+    if (_selectedBrand == null) return _buildBrandList();
+    if (_selectedModel == null) return _buildModelList(_selectedBrand!);
+    return _buildModelPriceList(_selectedBrand!, _selectedModel!);
+  }
 
-    // Brand wise group
+  Widget _buildBrandList() {
     final Map<String, List<ThaiColorSet>> grouped = {};
     for (var item in _thaiList) {
       grouped.putIfAbsent(item.brand, () => []).add(item);
     }
+    final brands = grouped.keys.toList();
 
     return ListView.builder(
       padding: const EdgeInsets.all(12),
-      itemCount: grouped.length + 1,
-      itemBuilder: (ctx, brandIdx) {
-        if (brandIdx == 0) {
+      itemCount: brands.length + 1,
+      itemBuilder: (ctx, idx) {
+        if (idx == 0) {
           return Container(
             margin: const EdgeInsets.only(bottom: 12),
             padding: const EdgeInsets.all(12),
@@ -225,7 +251,7 @@ class _PriceListScreenState extends State<PriceListScreen> with SingleTickerProv
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    "এগুলো কোম্পানির মূল দাম। প্রতিটি ব্র্যান্ডের উপর ট্যাপ করে আপনার পছন্দের ডিসকাউন্ট (%) দিন — অটো সেভ হবে। অথবা হিসাবের সময়ও প্রতিব্র্যান্ডে পারসেন্টেজ দিলে সেটাও অটো সেভ হয়ে থাকবে। ধাপ ১ ও ধাপ ২ থেকে ডিসকাউন্ট পরিবর্তন করা যাবে।",
+                    "এগুলো কোম্পানির মূল দাম। প্রতিটি ব্র্যান্ডের ডিসকাউন্ট (%) বাটনে ট্যাপ করে আপনার পছন্দের ডিসকাউন্ট দিন — অটো সেভ হবে। অথবা হিসাবের সময়ও প্রতি ব্র্যান্ডে পারসেন্টেজ দিলে সেটাও অটো সেভ হয়ে থাকবে।",
                     style: GoogleFonts.hindSiliguri(color: cYellow, fontSize: 12),
                   ),
                 ),
@@ -233,11 +259,12 @@ class _PriceListScreenState extends State<PriceListScreen> with SingleTickerProv
             ),
           );
         }
-        final brand = grouped.keys.elementAt(brandIdx - 1);
+        final brand = brands[idx - 1];
         final items = grouped[brand]!;
+        final modelCount = items.map((e) => e.model).toSet().length;
         final discount = _brandDiscounts[brand] ?? 0;
         return Container(
-          margin: const EdgeInsets.only(bottom: 12),
+          margin: const EdgeInsets.only(bottom: 10),
           decoration: BoxDecoration(
             color: cCard,
             borderRadius: BorderRadius.circular(12),
@@ -246,7 +273,7 @@ class _PriceListScreenState extends State<PriceListScreen> with SingleTickerProv
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Brand header with discount button
+              // Discount bar — old style, tap to edit discount
               GestureDetector(
                 onTap: () => _showDiscountDialog(brand),
                 child: Container(
@@ -284,16 +311,33 @@ class _PriceListScreenState extends State<PriceListScreen> with SingleTickerProv
                             style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11),
                           ),
                           const SizedBox(width: 4),
-                          Icon(Icons.edit_rounded, color: cMuted, size: 16),
+                          const Icon(Icons.edit_rounded, color: cMuted, size: 16),
                         ],
                       ),
                     ],
                   ),
                 ),
               ),
-              // Items
-              for (var item in items)
-                _buildThaiItem(item, discount),
+              // Navigate to model list
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
+                  onTap: () => setState(() => _selectedBrand = brand),
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text("$modelCount টি মডেল",
+                              style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 12)),
+                        ),
+                        const Icon(Icons.chevron_right_rounded, color: cMuted),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
         );
@@ -301,12 +345,121 @@ class _PriceListScreenState extends State<PriceListScreen> with SingleTickerProv
     );
   }
 
-  Widget _buildThaiItem(ThaiColorSet item, double brandDiscount) {
+  Widget _buildModelList(String brand) {
+    final items = _thaiList.where((e) => e.brand == brand).toList();
+    final Map<String, List<ThaiColorSet>> grouped = {};
+    for (var item in items) {
+      grouped.putIfAbsent(item.model, () => []).add(item);
+    }
+    final models = grouped.keys.toList();
+
+    return Column(
+      children: [
+        _buildDrillHeader(title: brand, onBack: () => setState(() => _selectedBrand = null)),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.all(12),
+            itemCount: models.length,
+            itemBuilder: (ctx, idx) {
+              final model = models[idx];
+              final count = grouped[model]!.length;
+              return Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                decoration: BoxDecoration(
+                  color: cCard,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: cBorder),
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => setState(() => _selectedModel = model),
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(model,
+                                    style: GoogleFonts.outfit(
+                                        fontSize: 14, fontWeight: FontWeight.bold, color: cText)),
+                                const SizedBox(height: 4),
+                                Text("$count টি কালার/সাইজ",
+                                    style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 12)),
+                              ],
+                            ),
+                          ),
+                          const Icon(Icons.chevron_right_rounded, color: cMuted),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildModelPriceList(String brand, String model) {
+    final items = _thaiList.where((e) => e.brand == brand && e.model == model).toList();
+    final discount = _brandDiscounts[brand] ?? 0;
+
+    return Column(
+      children: [
+        _buildDrillHeader(title: model, onBack: () => setState(() => _selectedModel = null)),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.all(12),
+            itemCount: items.length,
+            itemBuilder: (ctx, idx) => Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              decoration: BoxDecoration(
+                color: cCard,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: cBorder),
+              ),
+              child: _buildThaiItem(items[idx], discount),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDrillHeader({required String title, required VoidCallback onBack}) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: cBorder, width: 0.5)),
       ),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: cAccent, size: 18),
+            onPressed: onBack,
+          ),
+          Expanded(
+            child: Text(
+              title,
+              style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.bold, color: cText),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildThaiItem(ThaiColorSet item, double brandDiscount) {
+    return Padding(
+      padding: const EdgeInsets.all(12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -336,13 +489,16 @@ class _PriceListScreenState extends State<PriceListScreen> with SingleTickerProv
           ),
           const SizedBox(height: 8),
           // Price grid
-          _buildPriceRow("O/S আউটার খাড়া", item.priceOs, brandDiscount),
+          _buildPriceRow("O/S আউটার সাইড", item.priceOs, brandDiscount),
           _buildPriceRow("O/T আউটার টপ", item.priceOt, brandDiscount),
           _buildPriceRow("O/B আউটার বটম", item.priceOhb, brandDiscount),
-          _buildPriceRow("S/L পাল্লা লক", item.priceSl, brandDiscount),
+          _buildPriceRow("S/L শাটার লক", item.priceSl, brandDiscount),
           _buildPriceRow("I/L ইন্টারলক", item.priceIl, brandDiscount),
-          _buildPriceRow("S/T পাল্লা টপ", item.priceSt, brandDiscount),
-          _buildPriceRow("S/B পাল্লা বটম", item.priceSb, brandDiscount),
+          _buildPriceRow("S/T শাটার টপ", item.priceSt, brandDiscount),
+          _buildPriceRow("S/B শাটার বটম", item.priceSb, brandDiscount),
+          if (item.priceBox175 != null) _buildPriceRow("Box ১.৭৫", item.priceBox175!, brandDiscount),
+          if (item.priceFittingAngle != null)
+            _buildPriceRow("F/A ফিটিং অ্যাঙ্গেল", item.priceFittingAngle!, brandDiscount),
           if (item.profileSize.contains('4')) ...[
             if (item.priceNs != null) _buildPriceRow("N/S নেট সেকশন", item.priceNs!, brandDiscount),
             if (item.priceNb != null) _buildPriceRow("N/H নেট হ্যান্ডেল", item.priceNb!, brandDiscount),

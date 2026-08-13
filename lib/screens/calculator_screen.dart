@@ -42,6 +42,12 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   String? _selectedColorName;
   String? _selectedProfileSize;
 
+  String? _selectedModel; // অথবা String _selectedModel = '';
+  String? _selectedDoorBrandName;
+  String? _selectedDoorColorName;
+  double _doorBrandDiscount = 0;
+  GlassBrand? _selectedDoorGlassBrand;
+
   bool _isLoadingBrands = true;
   double _brandDiscount = 0;
   Map<String, double> _allBrandDiscounts = {};
@@ -55,6 +61,11 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   final _winWidthController = TextEditingController(text: "84");
   final _winHeightController = TextEditingController(text: "72");
   final _winQtyController = TextEditingController(text: "1");
+
+  // ── Single Door এর জন্য নতুন ──
+  String _addEntryType = 'window'; // 'window' অথবা 'door'
+  final _gateWidthController = TextEditingController();
+  bool _gateWidthTouched = false;
 
   final _osController = TextEditingController();
   final _otController = TextEditingController();
@@ -87,6 +98,16 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   void initState() {
     super.initState();
     _loadBrands();
+    _winWidthController.addListener(_autoFillGateWidth);
+  }
+
+  void _autoFillGateWidth() {
+    if (_addEntryType == 'door' && !_gateWidthTouched) {
+      final w = double.tryParse(_winWidthController.text);
+      if (w != null) {
+        _gateWidthController.text = (w / 2).toStringAsFixed(1);
+      }
+    }
   }
 
   @override
@@ -95,6 +116,8 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     _winWidthController.dispose();
     _winHeightController.dispose();
     _winQtyController.dispose();
+    _gateWidthController.dispose();
+
     _osController.dispose();
     _otController.dispose();
     _ohbController.dispose();
@@ -137,15 +160,37 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         }
 
         if (thais.isNotEmpty) {
-          final allBrands = thais.map((e) => e.brand).toSet().toList();
+          final allModels = thais.map((e) => e.model).toSet().toList();
+          _selectedModel = allModels.contains('general') ? 'general' : allModels.first;
+
+          final allBrands = thais
+              .where((e) => e.model == _selectedModel)
+              .map((e) => e.brand)
+              .toSet()
+              .toList();
           final filteredBrands = _selectedBrands.isEmpty
               ? allBrands
               : allBrands.where((b) => _selectedBrands.contains(b)).toList();
-          _selectedBrandName = filteredBrands.isNotEmpty ? filteredBrands.first : allBrands.first;
-          _brandDiscount = discounts[_selectedBrandName!] ?? 0;
-          _updateColorsForBrand();
-        }
+          _selectedBrandName = filteredBrands.isNotEmpty ? filteredBrands.first : (allBrands.isNotEmpty ? allBrands.first : null);
+          _brandDiscount = _selectedBrandName != null ? (discounts[_selectedBrandName!] ?? 0) : 0;
+          if (_selectedBrandName != null) _updateColorsForBrand();
 
+          final doorBrands = thais
+              .where((e) => e.model == _selectedModel && e.profileSize == 'single_door')
+              .map((e) => e.brand)
+              .toSet()
+              .toList();
+          if (doorBrands.isNotEmpty) {
+            _selectedDoorBrandName = doorBrands.first;
+            final doorColors = thais
+                .where((e) => e.model == _selectedModel && e.brand == _selectedDoorBrandName && e.profileSize == 'single_door')
+                .map((e) => e.color)
+                .toSet()
+                .toList();
+            _selectedDoorColorName = doorColors.isNotEmpty ? doorColors.first : null;
+            _doorBrandDiscount = _selectedDoorBrandName != null ? (discounts['door_${_selectedDoorBrandName!}'] ?? 0) : 0;
+          }
+        }
         _isLoadingBrands = false;
       });
     } catch (e) {
@@ -157,7 +202,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     if (_selectedBrandName == null || _thaiColorSets.isEmpty) return;
 
     final colors = _thaiColorSets
-        .where((e) => e.brand == _selectedBrandName)
+        .where((e) => e.model == _selectedModel && e.brand == _selectedBrandName)
         .map((e) => e.color)
         .toSet()
         .toList();
@@ -241,6 +286,94 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       });
     }
     Future.delayed(const Duration(milliseconds: 300), () => controller.dispose());
+  }
+
+  Future<void> _showDoorDiscountDialog() async {
+    if (_selectedDoorBrandName == null) return;
+    final brand = _selectedDoorBrandName!;
+    final controller = TextEditingController(
+        text: _doorBrandDiscount > 0 ? _doorBrandDiscount.toString() : '');
+
+    final result = await showDialog<double>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: cCard,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: cBorder),
+        ),
+        title: Text(
+          "সিঙ্গেল ডোর ডিসকাউন্ট",
+          style: GoogleFonts.hindSiliguri(color: cText, fontWeight: FontWeight.bold),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              "ব্র্যান্ড: $brand",
+              style: GoogleFonts.hindSiliguri(color: cAccent2, fontSize: 14, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              style: GoogleFonts.inter(color: cText, fontSize: 16),
+              decoration: InputDecoration(
+                labelText: "ডিসকাউন্ট (%)",
+                labelStyle: GoogleFonts.hindSiliguri(color: cMuted),
+                suffixText: "%",
+                suffixStyle: GoogleFonts.inter(color: cAccent2, fontSize: 16, fontWeight: FontWeight.bold),
+                enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: cBorder)),
+                focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: cAccent2)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text("বাতিল", style: GoogleFonts.hindSiliguri(color: cMuted)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final val = (double.tryParse(controller.text) ?? 0).clamp(0.0, 100.0);
+              Navigator.pop(ctx, val);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: cAccent2),
+            child: Text("সেভ করুন", style: GoogleFonts.hindSiliguri(color: cText, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null && mounted) {
+      await DatabaseService.instance.saveBrandDiscount('door_$brand', result);
+      setState(() {
+        _doorBrandDiscount = result;
+        _allBrandDiscounts['door_$brand'] = result;
+      });
+    }
+    Future.delayed(const Duration(milliseconds: 300), () => controller.dispose());
+  }
+
+  GlassBrand? _getActiveDoorGlassBrand() {
+    final glass = _selectedDoorGlassBrand;
+    if (glass == null) return null;
+    final rate = _customGlassRates[glass.brandName] ?? glass.pricePerSft.toDouble();
+    return GlassBrand(id: glass.id, brandName: glass.brandName, pricePerSft: rate.round());
+  }
+
+  ThaiColorSet? _getDoorColorSet() {
+    try {
+      return _thaiColorSets.firstWhere((e) =>
+          e.model == _selectedModel &&
+          e.brand == _selectedDoorBrandName &&
+          e.color == _selectedDoorColorName &&
+          e.profileSize == 'single_door');
+    } catch (_) {
+      return null;
+    }
   }
 
   GlassBrand? _getActiveGlassBrand() {
@@ -456,7 +589,11 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     if (_selectedBrandName == null || _selectedColorName == null || _thaiColorSets.isEmpty) return;
     
     final sizes = _thaiColorSets
-        .where((e) => e.brand == _selectedBrandName && e.color == _selectedColorName)
+        .where((e) =>
+            e.model == _selectedModel &&
+            e.brand == _selectedBrandName &&
+            e.color == _selectedColorName &&
+            e.profileSize != 'single_door')
         .map((e) => e.profileSize)
         .toSet()
         .toList();
@@ -475,6 +612,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   void _updateSelectedThaiColorSet() {
   try {
     _selectedThaiColorSet = _thaiColorSets.firstWhere((e) =>
+        e.model == _selectedModel &&
         e.brand == _selectedBrandName &&
         e.color == _selectedColorName &&
         e.profileSize == _selectedProfileSize);
@@ -484,7 +622,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     }
   }
   _refreshNsNhIfNeeded();
- } 
+ }
 
 // ৪" প্রোফাইলে পাল্টালে N/S, N/H ফাঁকা/০ থাকলে windowsList থেকে recalculate করে বসিয়ে দেয়
   void _refreshNsNhIfNeeded() {
@@ -502,7 +640,9 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     return WindowCalculation(
       windowsList: _windowsList,
       selectedThaiColorSet: _selectedThaiColorSet,
+      selectedDoorColorSet: _getDoorColorSet(),
       selectedGlassBrand: _getActiveGlassBrand(),
+      selectedDoorGlassBrand: _getActiveDoorGlassBrand(),
       hardwarePrices: _hardwarePrices,
       dlCount: _dlCount,
       swCount: _swCount,
@@ -524,9 +664,19 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   }
 
   double _calcTotalSft() => _getCalculation().calcTotalSft();
+
+  int _calcWindowAluTotalDiscounted() {
+    final base = _getCalculation().calcAluTotal();
+    return (base * (1 - _brandDiscount / 100)).round();
+  }
+
+  int _calcDoorAluTotalDiscounted() {
+    final base = _getCalculation().calcDoorAluTotal();
+    return (base * (1 - _doorBrandDiscount / 100)).round();
+  }
+
   int _calcAluTotal() {
-    final baseTotal = _getCalculation().calcAluTotal();
-    return (baseTotal * (1 - _brandDiscount / 100)).round();
+    return _calcWindowAluTotalDiscounted() + _calcDoorAluTotalDiscounted();
   }
   double _calcHwTotal() => _getCalculation().calcHwTotal();
   double _calcSft(double w, double h, int qty) => WindowCalculation.calcSft(w, h, qty);
@@ -537,7 +687,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
 
   double _calcHwTotalCustom() {
     final calc = _getCalculation();
-    final hwItems = calc.calcHardwareBreakdown();
+    final hwItems = [...calc.calcHardwareBreakdown(), ...calc.calcDoorHardwareBreakdown()];
     double total = 0;
     for (var item in hwItems) {
       final name = item['name'] as String;
@@ -564,10 +714,33 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       _showSnackBar("সঠিক সংখ্যা দিন!", cRed);
       return;
     }
-    if (name.isEmpty) name = "Window ${_windowsList.length + 1}";
+
+    double? gateWidth;
+    if (_addEntryType == 'door') {
+      gateWidth = double.tryParse(_gateWidthController.text) ?? (w / 2);
+    }
+
+    if (name.isEmpty) {
+      name = _addEntryType == 'door'
+          ? "Door ${_windowsList.where((e) => e['type'] == 'door').length + 1}"
+          : "Window ${_windowsList.where((e) => e['type'] != 'door').length + 1}";
+    }
+
     setState(() {
-      _windowsList.add({'name': name, 'w': w, 'h': h, 'qty': q});
-      _winNameController.text = "Window ${_windowsList.length + 1}";
+      _windowsList.add({
+        'name': name,
+        'type': _addEntryType,
+        'w': w,
+        'h': h,
+        'qty': q,
+        if (_addEntryType == 'door') 'gateWidth': gateWidth,
+      });
+      final nextIsDoor = _addEntryType == 'door';
+      _winNameController.text = nextIsDoor
+          ? "Door ${_windowsList.where((e) => e['type'] == 'door').length + 1}"
+          : "Window ${_windowsList.where((e) => e['type'] != 'door').length + 1}";
+      _gateWidthTouched = false;
+      _gateWidthController.clear();
     });
   }
 
@@ -701,11 +874,16 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     final thaiSet = calc.selectedThaiColorSet;
     final glassBrand = calc.selectedGlassBrand;
     final is4Inch = thaiSet?.profileSize.contains('4') == true;
+    final hasDoors = _windowsList.any((w) => w['type'] == 'door');
+    final hasWindows = _windowsList.any((w) => (w['type'] ?? 'window') != 'door');
+    final doorSet = calc.selectedDoorColorSet;
+    final doorCuts = calc.calcDoorCutInches();
+    final doorAluTotal = calc.calcDoorAluTotal();
 
-    // Window list
+    // Window/Door list
     final windowBuffer = StringBuffer();
     if (windows.isNotEmpty) {
-      windowBuffer.writeln("জানালার তালিকা:");
+      windowBuffer.writeln("জানালা/দরজার তালিকা:");
       windowBuffer.writeln("--------------------");
       for (var i = 0; i < windows.length; i++) {
         final w = windows[i];
@@ -713,7 +891,13 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         final height = (w['h'] as num?)?.toDouble() ?? 0;
         final qty = (w['qty'] as num?)?.toInt() ?? 1;
         final sft = (width * height / 144.0) * qty;
-        windowBuffer.writeln("  ${i + 1}. ${w['name']} — ${width.toStringAsFixed(0)}\" x ${height.toStringAsFixed(0)}\" x ${qty}টি = ${sft.toStringAsFixed(2)} Sft");
+        final isDoor = w['type'] == 'door';
+        final tag = isDoor ? "[দরজা]" : "[জানালা]";
+        final gateWidth = (w['gateWidth'] as num?)?.toDouble();
+        final dimsText = isDoor && gateWidth != null
+            ? "${height.toStringAsFixed(0)}\" x ${width.toStringAsFixed(0)}\" x ${gateWidth.toStringAsFixed(0)}\""
+            : "${height.toStringAsFixed(0)}\" x ${width.toStringAsFixed(0)}\"";
+        windowBuffer.writeln("  ${i + 1}. $tag ${w['name']} — $dimsText x ${qty}টি = ${sft.toStringAsFixed(2)} Sft");
       }
       windowBuffer.writeln("  মোট: ${totalSft.toStringAsFixed(2)} Sft");
       windowBuffer.writeln();
@@ -728,7 +912,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       final qty = (item['qty'] as num).toInt();
       final rate = _customHwRates[name] ?? (item['rate'] as num?)?.toDouble() ?? 0;
       final cost = qty * rate;
-      hwBuffer.writeln("  $name — $qty ${item['unit']} × ৳${_fmtTk(rate)} = ৳${_fmtTk(cost)}");
+      hwBuffer.writeln("  $name — $qty ${item['unit']} × ৳${_fmtRate(rate)} = ৳${_fmtTk(cost)}");
     }
     hwBuffer.writeln("  -------------------");
     hwBuffer.writeln("  হার্ডওয়্যার মোট: ৳${_fmtTk(hwTotal)}");
@@ -736,7 +920,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
 
     // Profile cut detail
     final cutBuffer = StringBuffer();
-    if (thaiSet != null) {
+    if (thaiSet != null && hasWindows) {
       cutBuffer.writeln("অ্যালুমিনিয়াম প্রোফাইল হিসাব:");
       cutBuffer.writeln("--------------------");
       cutBuffer.writeln("ব্র্যান্ড: ${thaiSet.brand} (${thaiSet.color})");
@@ -770,17 +954,80 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         }
       }
       cutBuffer.writeln("  -------------------");
-      if (_brandDiscount > 0) {
-        cutBuffer.writeln("  অ্যালুমিনিয়াম (মূল্য): ৳${_fmtTk(aluTotal.toDouble())}");
-        cutBuffer.writeln("  ডিসকাউন্ট (-${_brandDiscount.toStringAsFixed(0)}%): -৳${_fmtTk((aluTotal - aluTotalAfterDiscount).toDouble())}");
+      cutBuffer.writeln("  জানালা অ্যালুমিনিয়াম: ৳${_fmtTk(calc.calcAluTotal().toDouble())}");
+      cutBuffer.writeln();
+    }
+
+    // Single Door detail
+    if (hasDoors && doorSet != null) {
+      cutBuffer.writeln("সিঙ্গেল ডোর প্রোফাইল হিসাব:");
+      cutBuffer.writeln("--------------------");
+      cutBuffer.writeln("ব্র্যান্ড: ${doorSet.brand} (${doorSet.color})");
+      cutBuffer.writeln();
+
+      final doorCutItems = [
+        ['O/S (আউটার সাইড)', doorCuts['os'], doorSet.priceOs],
+        ['O/T (আউটার টপ)', doorCuts['ot'], doorSet.priceOt],
+        ['Low Bottom', doorCuts['ohb'], doorSet.priceOhb],
+        ['Shutter Lock', doorCuts['sl'], doorSet.priceSl],
+        ['Shutter Top', doorCuts['st'], doorSet.priceSt],
+        ['Shutter Bottom', doorCuts['sb'], doorSet.priceSb],
+        ['1.75 Box', doorCuts['box'], doorSet.priceBox175 ?? 0],
+        ['Fitting Angle', doorCuts['fittingAngle'], doorSet.priceFittingAngle ?? 0],
+      ];
+
+      final doorSpecInches = WindowCalculation.calcSpecLengthInches(doorSet.specLength);
+      for (var item in doorCutItems) {
+        final label = item[0] as String;
+        final inch = (item[1] as num?)?.toDouble() ?? 0;
+        final pricePerBar = (item[2] as num?)?.toInt() ?? 0;
+        final bars = inch / doorSpecInches;
+        final total = (bars * pricePerBar).round();
+        if (inch > 0) {
+          cutBuffer.writeln("  $label");
+          cutBuffer.writeln("    ইঞ্চি: ${inch.toStringAsFixed(0)}\"  |  বার: ${bars.toStringAsFixed(2)}  |  দর/বার: ৳$pricePerBar  |  মোট: ৳${_fmtTk(total.toDouble())}");
+        }
       }
+      cutBuffer.writeln("  -------------------");
+      cutBuffer.writeln("  ডোর অ্যালুমিনিয়াম: ৳${_fmtTk(doorAluTotal.toDouble())}");
+      cutBuffer.writeln();
+
+      cutBuffer.writeln("  ==========================");
+      if (_brandDiscount > 0) {
+        cutBuffer.writeln("  জানালা অ্যালু (মূল্য): ৳${_fmtTk(aluTotal.toDouble())}");
+        cutBuffer.writeln("  জানালা ডিসকাউন্ট (-${_brandDiscount.toStringAsFixed(0)}%): -৳${_fmtTk((aluTotal - _calcWindowAluTotalDiscounted()).toDouble())}");
+      }
+      if (_doorBrandDiscount > 0) {
+        cutBuffer.writeln("  ডোর অ্যালু (মূল্য): ৳${_fmtTk(doorAluTotal.toDouble())}");
+        cutBuffer.writeln("  ডোর ডিসকাউন্ট (-${_doorBrandDiscount.toStringAsFixed(0)}%): -৳${_fmtTk((doorAluTotal - _calcDoorAluTotalDiscounted()).toDouble())}");
+      }
+      cutBuffer.writeln("  অ্যালুমিনিয়াম সর্বমোট: ৳${_fmtTk(aluTotalAfterDiscount.toDouble())}");
+      cutBuffer.writeln();
+    } else if (_brandDiscount > 0) {
+      cutBuffer.writeln("  অ্যালুমিনিয়াম (মূল্য): ৳${_fmtTk(aluTotal.toDouble())}");
+      cutBuffer.writeln("  ডিসকাউন্ট (-${_brandDiscount.toStringAsFixed(0)}%): -৳${_fmtTk((aluTotal - aluTotalAfterDiscount).toDouble())}");
       cutBuffer.writeln("  অ্যালুমিনিয়াম মোট: ৳${_fmtTk(aluTotalAfterDiscount.toDouble())}");
       cutBuffer.writeln();
     }
 
     // Glass detail
     final glassBuffer = StringBuffer();
-    if (glassBrand != null) {
+    if (hasWindows && hasDoors && calc.hasSeparateDoorGlass) {
+      glassBuffer.writeln("গ্লাস হিসাব:");
+      glassBuffer.writeln("--------------------");
+      if (glassBrand != null) {
+        glassBuffer.writeln("🪟 জানালার গ্লাস: ${glassBrand.brandName}");
+        glassBuffer.writeln("  দর: ৳${_fmtTk(glassBrand.pricePerSft.toDouble())} / Sft  |  এলাকা: ${calc.calcWindowSft().toStringAsFixed(2)} Sft  |  মোট: ৳${_fmtTk(calc.calcWindowGlassTotal())}");
+      }
+      final doorGlass = calc.selectedDoorGlassBrand;
+      if (doorGlass != null) {
+        glassBuffer.writeln("🚪 ডোরের গ্লাস: ${doorGlass.brandName}");
+        glassBuffer.writeln("  দর: ৳${_fmtTk(doorGlass.pricePerSft.toDouble())} / Sft  |  এলাকা: ${calc.calcDoorSft().toStringAsFixed(2)} Sft  |  মোট: ৳${_fmtTk(calc.calcDoorGlassTotal())}");
+      }
+      glassBuffer.writeln("  -------------------");
+      glassBuffer.writeln("গ্লাস সর্বমোট: ৳${_fmtTk(glassTotal)}");
+      glassBuffer.writeln();
+    } else if (glassBrand != null) {
       glassBuffer.writeln("গ্লাস হিসাব:");
       glassBuffer.writeln("--------------------");
       glassBuffer.writeln("ব্র্যান্ড: ${glassBrand.brandName}");
@@ -851,18 +1098,24 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     
     try {
       final calc = _getCalculation();
-      final hwItems = calc.calcHardwareBreakdown();
-      for (var item in hwItems) {
+      final windowHwItems = calc.calcHardwareBreakdown();
+      final doorHwItemsList = calc.calcDoorHardwareBreakdown();
+      for (var item in [...windowHwItems, ...doorHwItemsList]) {
         final name = item['name'] as String;
         if (_customHwRates.containsKey(name)) {
           item['rate'] = _customHwRates[name];
           item['cost'] = (item['qty'] as int) * _customHwRates[name]!;
         }
       }
-      final aluTotal = calc.calcAluTotal();
+      final aluTotal = calc.calcCombinedAluTotal();
       final aluTotalAfterDiscount = _calcAluTotal();
+      final hasDoors = _windowsList.any((w) => w['type'] == 'door');
+      final hasWindowsEntries = _windowsList.any((w) => (w['type'] ?? 'window') != 'door');
+      final doorCuts = calc.calcDoorCutInches();
+
       final fare = double.tryParse(_fareController.text) ?? 0;
       final grandTotal = aluTotalAfterDiscount.toDouble() + calc.calcGlassTotal() + _calcHwTotalCustom() + calc.labor + fare;
+      final doorSet = _getDoorColorSet();
       final invoice = {
         'name': name,
         'phone': _customerPhoneController.text.trim(),
@@ -881,9 +1134,37 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         'windows': _windowsList,
         'totalSft': calc.calcTotalSft(),
         'aluTotal': aluTotalAfterDiscount,
+        'windowAluTotal': hasWindowsEntries ? _calcWindowAluTotalDiscounted() : 0,
         'glassTotal': calc.calcGlassTotal(),
+        'windowGlassTotal': calc.calcWindowGlassTotal(),
+        'doorGlassTotal': calc.calcDoorGlassTotal(),
+        'hasSeparateDoorGlass': calc.hasSeparateDoorGlass,
         'hwTotal': _calcHwTotalCustom(),
-        'hwItems': hwItems,
+        'hwItems': [...windowHwItems, ...doorHwItemsList],
+        'windowHwItems': windowHwItems,
+        'doorHwItems': doorHwItemsList,
+        'hasDoors': hasDoors,
+        'hasWindows': hasWindowsEntries,
+        'doorCuts': hasDoors ? doorCuts : null,
+        'doorBrand': hasDoors ? _selectedDoorBrandName : null,
+        'doorColor': hasDoors ? _selectedDoorColorName : null,
+        'doorBrandDiscount': hasDoors ? _doorBrandDiscount : 0,
+        'doorAluTotal': hasDoors ? _calcDoorAluTotalDiscounted() : 0,
+        'doorGlassBrand': hasDoors ? (_getActiveDoorGlassBrand()?.brandName ?? _getActiveGlassBrand()?.brandName ?? '') : '',
+        'doorGlassRate': hasDoors ? (_getActiveDoorGlassBrand()?.pricePerSft ?? _getActiveGlassBrand()?.pricePerSft ?? 0) : 0,
+        'doorSpecLength': hasDoors ? doorSet?.specLength : null,
+        'doorCutPrices': hasDoors && doorSet != null
+            ? {
+                'os': doorSet.priceOs,
+                'ot': doorSet.priceOt,
+                'ohb': doorSet.priceOhb,
+                'sl': doorSet.priceSl,
+                'st': doorSet.priceSt,
+                'sb': doorSet.priceSb,
+                'box': doorSet.priceBox175 ?? 0,
+                'fittingAngle': doorSet.priceFittingAngle ?? 0,
+              }
+            : null,
         'labor': calc.labor,
         'fare': fare,
         'advance': calc.advance,
@@ -891,7 +1172,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         'swCount': _swCount,
         'scCount': _scCount,
         'snCount': _snCount,
-        'cuts': {
+        'cuts': hasWindowsEntries ? {
           'os': double.tryParse(_osController.text) ?? 0,
           'ot': double.tryParse(_otController.text) ?? 0,
           'ohb': double.tryParse(_ohbController.text) ?? 0,
@@ -901,7 +1182,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           'sb': double.tryParse(_sbController.text) ?? 0,
           'ns': double.tryParse(_nsController.text) ?? 0,
           'nh': double.tryParse(_nhController.text) ?? 0,
-        },
+        } : null,
         'cutPrices': {
           'os': _selectedThaiColorSet?.priceOs ?? 0,
           'ot': _selectedThaiColorSet?.priceOt ?? 0,
@@ -1078,23 +1359,38 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           color: cText, fontSize: 15, fontWeight: FontWeight.bold));
 
   Widget _buildStep1() {
-    // Collect distinct brand list
-    final allBrandsList = _thaiColorSets.map((e) => e.brand).toSet().toList();
+    // Collect distinct brand list (model অনুযায়ী ফিল্টার, door mode হলে single_door সাপোর্টেড brand-ই দেখাবে)
+    final allBrandsList = _thaiColorSets
+        .where((e) => e.model == _selectedModel && e.profileSize != 'single_door')
+        .map((e) => e.brand)
+        .toSet()
+        .toList();
     final brandsList = _selectedBrands.isEmpty
         ? allBrandsList
         : allBrandsList.where((b) => _selectedBrands.contains(b)).toList();
-    // Colors matching selected brand
+    // Colors matching selected brand + model
     final colorsList = _thaiColorSets
-        .where((e) => e.brand == _selectedBrandName)
+        .where((e) => e.model == _selectedModel && e.brand == _selectedBrandName)
         .map((e) => e.color)
         .toSet()
         .toList();
-    // Profile size list matching selected brand and color
+    // Profile size list matching selected brand and color (single_door বাদে)
     final profileSizeList = _thaiColorSets
-        .where((e) => e.brand == _selectedBrandName && e.color == _selectedColorName)
+        .where((e) =>
+            e.model == _selectedModel &&
+            e.brand == _selectedBrandName &&
+            e.color == _selectedColorName &&
+            e.profileSize != 'single_door')
         .map((e) => e.profileSize)
         .toSet()
         .toList();
+
+    final hasWindowEntries = _windowsList.any((w) => (w['type'] ?? 'window') != 'door');
+    final hasDoorEntries = _windowsList.any((w) => w['type'] == 'door');
+    final showWindowFields = hasWindowEntries || _addEntryType == 'window';
+    final showDoorFields = hasDoorEntries || _addEntryType == 'door';
+    final bothTypesPresent = showWindowFields && showDoorFields;
+    final doorGlassOnlyMode = showDoorFields && !showWindowFields;
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       // Brand Filter Card
@@ -1148,11 +1444,50 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
             ),
           )
         else ...[
+          // Model Dropdown
+          DropdownButtonFormField<String>(
+            value: _selectedModel,
+            dropdownColor: cCard,
+            style: GoogleFonts.hindSiliguri(color: cText, fontSize: 14),
+            decoration: InputDecoration(
+              labelText: "মডেল সিলেক্ট করুন",
+              labelStyle: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 13),
+              filled: true, fillColor: const Color(0xFF12151F),
+              enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: cBorder)),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: cAccent)),
+            ),
+            items: _thaiColorSets.map((e) => e.model).toSet().toList().map((v) =>
+                DropdownMenuItem<String>(value: v, child: Text(v == 'general' ? 'General' : v.toUpperCase()))).toList(),
+            onChanged: (v) {
+              setState(() {
+                _selectedModel = v;
+                final allBrands = _thaiColorSets
+                    .where((e) => e.model == _selectedModel)
+                    .map((e) => e.brand)
+                    .toSet()
+                    .toList();
+                _selectedBrandName = allBrands.isNotEmpty ? allBrands.first : null;
+                if (_selectedBrandName != null) {
+                  _updateColorsForBrand();
+                } else {
+                  _selectedColorName = null;
+                  _selectedProfileSize = null;
+                  _selectedThaiColorSet = null;
+                }
+              });
+            },
+          ),
+          const SizedBox(height: 12),
+          if (showWindowFields) ...[
           // Cascading Brand Dropdown with discount badge
           Row(children: [
             Expanded(
               child: DropdownButtonFormField<String>(
-                value: _selectedBrandName,
+                value: brandsList.contains(_selectedBrandName) ? _selectedBrandName : null,
                 dropdownColor: cCard,
                 style: GoogleFonts.hindSiliguri(color: cText, fontSize: 14),
                 decoration: InputDecoration(
@@ -1216,7 +1551,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           const SizedBox(height: 12),
           // Cascading Color Dropdown
           DropdownButtonFormField<String>(
-            value: _selectedColorName,
+            value: colorsList.contains(_selectedColorName) ? _selectedColorName : null,
             dropdownColor: cCard,
             style: GoogleFonts.hindSiliguri(color: cText, fontSize: 14),
             decoration: InputDecoration(
@@ -1240,13 +1575,13 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
             },
           ),
           const SizedBox(height: 12),
-          // Cascading Profile Size Dropdown
+          // Profile Size (৩"/৪") Dropdown
           DropdownButtonFormField<String>(
-            value: _selectedProfileSize,
+            value: profileSizeList.contains(_selectedProfileSize) ? _selectedProfileSize : null,
             dropdownColor: cCard,
             style: GoogleFonts.hindSiliguri(color: cText, fontSize: 14),
             decoration: InputDecoration(
-              labelText: "জানালার ধরন সিলেক্ট করুন",
+              labelText: "প্রোফাইল সাইজ সিলেক্ট করুন",
               labelStyle: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 13),
               filled: true, fillColor: const Color(0xFF12151F),
               enabledBorder: OutlineInputBorder(
@@ -1258,77 +1593,358 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
             ),
             items: profileSizeList.map((v) =>
                 DropdownMenuItem<String>(
-                  value: v, 
-                  child: Text(v.contains('4') ? '৪" (নেট সহ)' : '৩" (নেট ছাড়া)'),
+                  value: v,
+                  child: Text(v.contains('4') ? '৪" (নেট সহ)' : '৩" (নেট ছাড়া)'),
                 )).toList(),
             onChanged: (v) {
               setState(() {
                 _selectedProfileSize = v;
                 _updateSelectedThaiColorSet();
               });
+              double totalSft = _calcTotalSft();
+              double newRate = (v != null && v.contains('4')) ? 30 : 25;
+              _laborRateController.text = newRate.toStringAsFixed(0);
+              _laborController.text = (totalSft * newRate).toStringAsFixed(0);
             },
           ),
+          ],
           const SizedBox(height: 12),
-          // Glass Brand Dropdown
-          Row(children: [
-            Expanded(
-              child: DropdownButtonFormField<GlassBrand>(
-                value: _selectedGlassBrand,
-                dropdownColor: cCard,
-                style: GoogleFonts.hindSiliguri(color: cText, fontSize: 14),
-                decoration: InputDecoration(
-                  labelText: "গ্লাস ব্র্যান্ড / টাইপ সিলেক্ট করুন",
-                  labelStyle: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 13),
-                  filled: true, fillColor: const Color(0xFF12151F),
-                  enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: cBorder)),
-                  focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: cAccent)),
-                ),
-                items: _glassBrands.map((v) =>
-                    DropdownMenuItem<GlassBrand>(value: v, child: Text(v.brandName))).toList(),
-                onChanged: (v) => setState(() => _selectedGlassBrand = v),
-              ),
-            ),
-            if (_selectedGlassBrand != null) ...[
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: () => _showGlassRateDialog(),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: cBorder.withOpacity(0.5),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: cBorder),
+          if (showDoorFields) ...[
+            // Door mode হলে door-এর নিজস্ব Brand/Color Dropdown দেখাবে
+            Builder(builder: (_) {
+              final doorBrandsList = _thaiColorSets
+                  .where((e) => e.model == _selectedModel && e.profileSize == 'single_door')
+                  .map((e) => e.brand)
+                  .toSet()
+                  .toList();
+              final doorColorsList = _thaiColorSets
+                  .where((e) =>
+                      e.model == _selectedModel &&
+                      e.brand == _selectedDoorBrandName &&
+                      e.profileSize == 'single_door')
+                  .map((e) => e.color)
+                  .toSet()
+                  .toList();
+              return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Row(children: [
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      value: doorBrandsList.contains(_selectedDoorBrandName) ? _selectedDoorBrandName : null,
+                      dropdownColor: cCard,
+                      style: GoogleFonts.hindSiliguri(color: cText, fontSize: 14),
+                      decoration: InputDecoration(
+                        labelText: "সিঙ্গেল ডোর ব্র্যান্ড",
+                        labelStyle: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 13),
+                        filled: true, fillColor: const Color(0xFF12151F),
+                        enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(color: cBorder)),
+                        focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(color: cAccent2)),
+                      ),
+                      items: doorBrandsList.map((v) =>
+                          DropdownMenuItem<String>(value: v, child: Text(v))).toList(),
+                      onChanged: (v) {
+                        setState(() {
+                          _selectedDoorBrandName = v;
+                          final doorColors = _thaiColorSets
+                              .where((e) => e.model == _selectedModel && e.brand == v && e.profileSize == 'single_door')
+                              .map((e) => e.color)
+                              .toSet()
+                              .toList();
+                          _selectedDoorColorName = doorColors.isNotEmpty ? doorColors.first : null;
+                          _doorBrandDiscount = v != null ? (_allBrandDiscounts['door_$v'] ?? 0) : 0;
+                        });
+                      },
+                    ),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        "৳${_fmtTk(_getActiveGlassBrand()?.pricePerSft.toDouble() ?? 0)}",
-                        style: GoogleFonts.inter(
-                          color: cAccent,
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: () => _showDoorDiscountDialog(),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: _doorBrandDiscount > 0
+                            ? cGreen.withOpacity(0.15)
+                            : cBorder.withOpacity(0.5),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: _doorBrandDiscount > 0 ? cGreen.withOpacity(0.4) : cBorder,
                         ),
                       ),
-                      const SizedBox(width: 4),
-                      const Icon(Icons.edit_rounded, color: cAccent, size: 12),
-                    ],
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _doorBrandDiscount > 0 ? "-${_doorBrandDiscount.toStringAsFixed(0)}%" : "0%",
+                            style: GoogleFonts.inter(
+                              color: _doorBrandDiscount > 0 ? cGreen : cMuted,
+                              fontSize: 13, fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(Icons.edit_rounded,
+                              color: _doorBrandDiscount > 0 ? cGreen : cMuted, size: 12),
+                        ],
+                      ),
+                    ),
                   ),
+                ]),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  value: doorColorsList.contains(_selectedDoorColorName) ? _selectedDoorColorName : null,
+                  dropdownColor: cCard,
+                  style: GoogleFonts.hindSiliguri(color: cText, fontSize: 14),
+                  decoration: InputDecoration(
+                    labelText: "সিঙ্গেল ডোর কালার",
+                    labelStyle: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 13),
+                    filled: true, fillColor: const Color(0xFF12151F),
+                    enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: cBorder)),
+                    focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: cAccent2)),
+                  ),
+                  items: doorColorsList.map((v) =>
+                      DropdownMenuItem<String>(value: v, child: Text(v))).toList(),
+                  onChanged: (v) => setState(() => _selectedDoorColorName = v),
+                ),
+                const SizedBox(height: 8),
+                if (_getDoorColorSet() == null)
+                  Text("এই ব্র্যান্ড/কালারে সিঙ্গেল ডোরের রেট নেই",
+                      style: GoogleFonts.hindSiliguri(color: cRed, fontSize: 11)),
+                const SizedBox(height: 8),
+                if (doorGlassOnlyMode) ...[
+                  // শুধু Door লিস্টে থাকলে — একটাই Glass dropdown, Window ভ্যারিয়েবল শেয়ার করবে
+                  Row(children: [
+                    Expanded(
+                      child: DropdownButtonFormField<GlassBrand>(
+                        value: _selectedGlassBrand,
+                        dropdownColor: cCard,
+                        isExpanded: true,
+                        style: GoogleFonts.hindSiliguri(color: cText, fontSize: 13),
+                        decoration: InputDecoration(
+                          labelText: "দরজার গ্লাস ব্র্যান্ড / টাইপ সিলেক্ট করুন",
+                          labelStyle: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11),
+                          filled: true, fillColor: const Color(0xFF12151F),
+                          enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: const BorderSide(color: cBorder)),
+                          focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: const BorderSide(color: cAccent2)),
+                        ),
+                        items: _glassBrands.map((v) => DropdownMenuItem<GlassBrand>(value: v, child: Text(v.brandName, overflow: TextOverflow.ellipsis))).toList(),
+                        onChanged: (v) => setState(() => _selectedGlassBrand = v),
+                      ),
+                    ),
+                    if (_selectedGlassBrand != null) ...[
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: () => _showGlassRateDialog(),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: cBorder.withOpacity(0.5),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: cBorder),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                "৳${_fmtTk(_getActiveGlassBrand()?.pricePerSft.toDouble() ?? 0)}",
+                                style: GoogleFonts.inter(
+                                  color: cAccent2,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              const Icon(Icons.edit_rounded, color: cAccent2, size: 12),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ]),
+                ] else if (bothTypesPresent) ...[
+                  // Window + Door দুটোই লিস্টে থাকলে — Door এর আলাদা dropdown, ডিফল্ট window এর glass দিয়ে
+                  Row(children: [
+                    Expanded(
+                      child: DropdownButtonFormField<GlassBrand>(
+                        value: _selectedDoorGlassBrand ?? _selectedGlassBrand,
+                        dropdownColor: cCard,
+                        isExpanded: true,
+                        style: GoogleFonts.hindSiliguri(color: cText, fontSize: 13),
+                        decoration: InputDecoration(
+                          labelText: "দরজার গ্লাস ব্র্যান্ড / টাইপ সিলেক্ট করুন",
+                          labelStyle: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11),
+                          filled: true, fillColor: const Color(0xFF12151F),
+                          enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: const BorderSide(color: cBorder)),
+                          focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: const BorderSide(color: cAccent2)),
+                        ),
+                        items: _glassBrands.map((v) => DropdownMenuItem<GlassBrand>(value: v, child: Text(v.brandName, overflow: TextOverflow.ellipsis))).toList(),
+                        onChanged: (v) => setState(() => _selectedDoorGlassBrand = v),
+                      ),
+                    ),
+                    if (_selectedDoorGlassBrand != null) ...[
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: () {
+                          final prevSelected = _selectedGlassBrand;
+                          setState(() => _selectedGlassBrand = _selectedDoorGlassBrand);
+                          _showGlassRateDialog().then((_) {
+                            setState(() => _selectedGlassBrand = prevSelected);
+                          });
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: cBorder.withOpacity(0.5),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: cBorder),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                "৳${_fmtTk(_getActiveDoorGlassBrand()?.pricePerSft.toDouble() ?? 0)}",
+                                style: GoogleFonts.inter(
+                                  color: cAccent2,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              const Icon(Icons.edit_rounded, color: cAccent2, size: 12),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ]),
+                ],
+              ]);
+            }),
+          ],
+          if (!doorGlassOnlyMode) ...[
+            const SizedBox(height: 12),
+            // Glass Brand Dropdown (Window)
+            Row(children: [
+              Expanded(
+                child: DropdownButtonFormField<GlassBrand>(
+                  value: _selectedGlassBrand,
+                  dropdownColor: cCard,
+                  style: GoogleFonts.hindSiliguri(color: cText, fontSize: 14),
+                  decoration: InputDecoration(
+                    labelText: " জানালার গ্লাস ব্র্যান্ড / টাইপ সিলেক্ট করুন",
+                    labelStyle: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 13),
+                    filled: true, fillColor: const Color(0xFF12151F),
+                    enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: cBorder)),
+                    focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: cAccent)),
+                  ),
+                  items: _glassBrands.map((v) =>
+                      DropdownMenuItem<GlassBrand>(value: v, child: Text(v.brandName))).toList(),
+                  onChanged: (v) => setState(() => _selectedGlassBrand = v),
                 ),
               ),
-            ],
-          ]),
+              if (_selectedGlassBrand != null) ...[
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () => _showGlassRateDialog(),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: cBorder.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: cBorder),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          "৳${_fmtTk(_getActiveGlassBrand()?.pricePerSft.toDouble() ?? 0)}",
+                          style: GoogleFonts.inter(
+                            color: cAccent,
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(Icons.edit_rounded, color: cAccent, size: 12),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ]),
+          ],
         ],
       ])),
       const SizedBox(height: 14),
       _buildCard(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        _buildHeading("➕ নতুন জানালা যোগ করুন"),
+        _buildHeading("➕ নতুন জানালা / দরজা যোগ করুন"),
         const SizedBox(height: 12),
-        _buildTextInput(controller: _winNameController, label: "জানালার নাম / লোকেশন"),
+        // ── Type Toggle ──
+        Row(children: [
+          Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() {
+                _addEntryType = 'window';
+                _winNameController.text = "Window ${_windowsList.where((e) => e['type'] != 'door').length + 1}";
+              }),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: _addEntryType == 'window' ? cAccent.withOpacity(0.15) : cBorder.withOpacity(0.3),
+                  borderRadius: const BorderRadius.horizontal(left: Radius.circular(8)),
+                  border: Border.all(color: _addEntryType == 'window' ? cAccent : cBorder),
+                ),
+                alignment: Alignment.center,
+                child: Text("🪟 জানালা",
+                    style: GoogleFonts.hindSiliguri(
+                        color: _addEntryType == 'window' ? cAccent : cMuted,
+                        fontWeight: FontWeight.bold, fontSize: 13)),
+              ),
+            ),
+          ),
+          Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() {
+                _addEntryType = 'door';
+                _winNameController.text = "Door ${_windowsList.where((e) => e['type'] == 'door').length + 1}";
+                _gateWidthTouched = false;
+                _autoFillGateWidth();
+              }),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: _addEntryType == 'door' ? cAccent2.withOpacity(0.15) : cBorder.withOpacity(0.3),
+                  borderRadius: const BorderRadius.horizontal(right: Radius.circular(8)),
+                  border: Border.all(color: _addEntryType == 'door' ? cAccent2 : cBorder),
+                ),
+                alignment: Alignment.center,
+                child: Text("🚪 সিঙ্গেল ডোর",
+                    style: GoogleFonts.hindSiliguri(
+                        color: _addEntryType == 'door' ? cAccent2 : cMuted,
+                        fontWeight: FontWeight.bold, fontSize: 13)),
+              ),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 12),
+        _buildTextInput(controller: _winNameController, label: _addEntryType == 'door' ? "দরজার নাম / লোকেশন" : "জানালার নাম / লোকেশন"),
         const SizedBox(height: 12),
         Row(children: [
           Expanded(child: _buildTextInput(controller: _winHeightController, label: "উচ্চতা (H) ইঞ্চি", isNumber: true)),
@@ -1337,15 +1953,25 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           const SizedBox(width: 8),
           Expanded(child: _buildTextInput(controller: _winQtyController, label: "পরিমাণ (Qty)", isNumber: true)),
         ]),
+        if (_addEntryType == 'door') ...[
+          const SizedBox(height: 8),
+          _buildTextInput(
+            controller: _gateWidthController,
+            label: "পাল্লার/গেটের প্রস্থ (ইঞ্চি)",
+            isNumber: true,
+            onChanged: (v) => _gateWidthTouched = true,
+          ),
+        ],
         const SizedBox(height: 14),
         ElevatedButton.icon(
           onPressed: _addWindow,
           style: ElevatedButton.styleFrom(
-              backgroundColor: cAccent, foregroundColor: cBg,
+              backgroundColor: _addEntryType == 'door' ? cAccent2 : cAccent,
+              foregroundColor: _addEntryType == 'door' ? cText : cBg,
               padding: const EdgeInsets.symmetric(vertical: 12),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
           icon: const Icon(Icons.add, size: 20),
-          label: Text("ADD WINDOW", style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+          label: Text(_addEntryType == 'door' ? "ADD DOOR" : "ADD WINDOW", style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
         ),
       ])),
       const SizedBox(height: 14),
@@ -1376,9 +2002,24 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                     border: Border.all(color: cBorder)),
                 child: Column(children: [
                   Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                    Text("#${idx + 1}  ${w['name']}",
-                        style: GoogleFonts.hindSiliguri(
-                            color: cText, fontWeight: FontWeight.bold, fontSize: 14)),
+                    Row(children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                        margin: const EdgeInsets.only(right: 6),
+                        decoration: BoxDecoration(
+                          color: (w['type'] == 'door' ? cAccent2 : cAccent).withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: w['type'] == 'door' ? cAccent2 : cAccent),
+                        ),
+                        child: Text(w['type'] == 'door' ? "🚪 ডোর" : "🪟 জানালা",
+                            style: GoogleFonts.hindSiliguri(
+                                color: w['type'] == 'door' ? cAccent2 : cAccent,
+                                fontSize: 10, fontWeight: FontWeight.bold)),
+                      ),
+                      Text("#${idx + 1}  ${w['name']}",
+                          style: GoogleFonts.hindSiliguri(
+                              color: cText, fontWeight: FontWeight.bold, fontSize: 14)),
+                    ]),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(color: cAccent, borderRadius: BorderRadius.circular(4)),
@@ -1388,8 +2029,17 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                   ]),
                   const SizedBox(height: 4),
                   Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                    Text("W: ${w['w']}\"  ×  H: ${w['h']}\"  ×  Qty: ${w['qty']}",
-                        style: GoogleFonts.inter(color: cMuted, fontSize: 12)),
+                    Expanded(
+                      child: Text(
+                        w['type'] == 'door'
+                            ? "H: ${w['h']}\"  ×  W: ${w['w']}\"  ×  Gate: ${w['gateWidth']}\"  ×  Qty: ${w['qty']}"
+                            : "H: ${w['h']}\"  ×  W: ${w['w']}\"  ×  Qty: ${w['qty']}",
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                        style: GoogleFonts.inter(color: cMuted, fontSize: 12),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
                     TextButton(
                       onPressed: () => setState(() {
                         _windowsList.removeAt(idx);
@@ -1424,112 +2074,252 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   }
 
   Widget _buildStep2() {
+    final hasDoors = _windowsList.any((w) => w['type'] == 'door');
+    final hasWindows = _windowsList.any((w) => (w['type'] ?? 'window') != 'door');
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      _buildCard(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        _buildHeading("কাটিং ইঞ্চি (ওভাররাইড করা যাবে)"),
-        Text("প্রয়োজন অনুযায়ী এডিট করুন।",
-            style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11, fontStyle: FontStyle.italic)),
-        const SizedBox(height: 12),
-        Row(children: [
-          Expanded(child: _buildTextInput(controller: _osController, label: "O/S আউটার সাইড মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
-          const SizedBox(width: 8),
-          Expanded(child: _buildTextInput(controller: _otController, label: "O/T আউটার টপ মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
-        ]),
-        const SizedBox(height: 8),
-        Row(children: [
-          Expanded(child: _buildTextInput(controller: _ohbController, label: "OHB আউটার হাই বটম মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
-          const SizedBox(width: 8),
-          Expanded(child: _buildTextInput(controller: _slController, label: "S/L শাটার লক মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
-        ]),
-        const SizedBox(height: 8),
-        Row(children: [
-          Expanded(child: _buildTextInput(controller: _ilController, label: "I/L ইন্টারলক মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
-          const SizedBox(width: 8),
-          Expanded(child: _buildTextInput(controller: _stController, label: "S/T শাটার টপ মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
-        ]),
-        const SizedBox(height: 8),
-        Row(children: [
-          Expanded(child: _buildTextInput(controller: _sbController, label: "S/B শাটার বটম মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
-          const SizedBox(width: 8),
-          if (_selectedThaiColorSet?.profileSize.contains('4') == true)
-            Expanded(child: _buildTextInput(controller: _nsController, label: "N/S নেট সেকশন মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {})))
-          else
-            const Expanded(child: SizedBox()),
-        ]),
-        if (_selectedThaiColorSet?.profileSize.contains('4') == true) ...[
-          const SizedBox(height: 8),
-          Row(children: [
-            Expanded(child: _buildTextInput(controller: _nhController, label: "N/H নেট হ্যান্ডেল মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
-            const SizedBox(width: 8),
-            const Expanded(child: SizedBox()),
-          ]),
-        ],
-      ])),
-      const SizedBox(height: 14),
-      _buildCard(
-        borderColor: cAccent.withOpacity(0.3),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          _buildHeading("📊 বার ব্রেকডাউন"),
-          const SizedBox(height: 12),
-          _buildAluBreakdownTable(),
-          const SizedBox(height: 16),
-          GestureDetector(
-            onTap: () => _showStep1DiscountDialog(),
-            child: Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: _brandDiscount > 0
-                    ? cYellow.withOpacity(0.08)
-                    : cBorder.withOpacity(0.3),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: _brandDiscount > 0
-                      ? cYellow.withOpacity(0.3)
-                      : cBorder,
+      if (hasDoors) ...[
+        _buildCard(
+          borderColor: cAccent2.withOpacity(0.3),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            _buildHeading("🚪 সিঙ্গেল ডোর হিসাব"),
+            const SizedBox(height: 12),
+            _buildDoorBreakdownTable(),
+            const SizedBox(height: 16),
+            GestureDetector(
+              onTap: () => _showDoorDiscountDialog(),
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: _doorBrandDiscount > 0 ? cYellow.withOpacity(0.08) : cBorder.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: _doorBrandDiscount > 0 ? cYellow.withOpacity(0.3) : cBorder,
+                  ),
                 ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
                       Icon(Icons.local_offer_rounded,
-                          color: _brandDiscount > 0 ? cYellow : cMuted, size: 16),
+                          color: _doorBrandDiscount > 0 ? cYellow : cMuted, size: 16),
                       const SizedBox(width: 6),
                       Text(
-                        _brandDiscount > 0
-                            ? "ডিসকাউন্ট (-${_brandDiscount.toStringAsFixed(0)}%)"
-                            : "ডিসকাউন্ট (0%)",
+                        _doorBrandDiscount > 0
+                            ? "ডোর ডিসকাউন্ট (-${_doorBrandDiscount.toStringAsFixed(0)}%)"
+                            : "ডোর ডিসকাউন্ট (0%)",
                         style: GoogleFonts.hindSiliguri(
-                          color: _brandDiscount > 0 ? cYellow : cMuted,
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
+                          color: _doorBrandDiscount > 0 ? cYellow : cMuted,
+                          fontSize: 13, fontWeight: FontWeight.bold,
                         ),
                       ),
                       const Spacer(),
                       Icon(Icons.edit_rounded,
-                          color: _brandDiscount > 0 ? cYellow : cMuted, size: 14),
+                          color: _doorBrandDiscount > 0 ? cYellow : cMuted, size: 14),
+                    ]),
+                    if (_doorBrandDiscount > 0) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        "মূল দাম: ৳ ${_fmtTk(_getCalculation().calcDoorAluTotal().toDouble())}",
+                        style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 12, decoration: TextDecoration.lineThrough)),
+                      const SizedBox(height: 2),
+                      Text(
+                        "ছাড়: -৳ ${_fmtTk((_getCalculation().calcDoorAluTotal() - _calcDoorAluTotalDiscounted()).toDouble())}",
+                        style: GoogleFonts.hindSiliguri(color: cGreen, fontSize: 12)),
                     ],
-                  ),
-                  if (_brandDiscount > 0) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      "মূল দাম: ৳ ${_fmtTk(_getCalculation().calcAluTotal().toDouble())}",
-                      style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 12, decoration: TextDecoration.lineThrough)),
-                    const SizedBox(height: 2),
-                    Text(
-                      "ছাড়: -৳ ${_fmtTk((_getCalculation().calcAluTotal() - _calcAluTotal()).toDouble())}",
-                      style: GoogleFonts.hindSiliguri(color: cGreen, fontSize: 12)),
                   ],
-                ],
+                ),
               ),
             ),
-          ),
-          Text(
-            "অ্যালুমিনিয়াম সাবটোটাল: ৳ ${_fmtTk(_calcAluTotal().toDouble())}",
-            style: GoogleFonts.hindSiliguri(color: cGreen, fontWeight: FontWeight.bold, fontSize: 15)),
-        ]),
-      ),
+            const SizedBox(height: 8),
+            Text(
+              "ডোর অ্যালুমিনিয়াম সাবটোটাল: ৳ ${_fmtTk(_calcDoorAluTotalDiscounted().toDouble())}",
+              style: GoogleFonts.hindSiliguri(color: cAccent2, fontWeight: FontWeight.bold, fontSize: 14),
+            ),
+          ]),
+        ),
+        const SizedBox(height: 14),
+      ],
+      if (hasWindows) ...[
+        _buildCard(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          _buildHeading("কাটিং ইঞ্চি (ওভাররাইড করা যাবে)"),
+          Text("প্রয়োজন অনুযায়ী এডিট করুন।",
+              style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11, fontStyle: FontStyle.italic)),
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(child: _buildTextInput(controller: _osController, label: "O/S আউটার সাইড মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
+            const SizedBox(width: 8),
+            Expanded(child: _buildTextInput(controller: _otController, label: "O/T আউটার টপ মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
+          ]),
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(child: _buildTextInput(controller: _ohbController, label: "OHB আউটার হাই বটম মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
+            const SizedBox(width: 8),
+            Expanded(child: _buildTextInput(controller: _slController, label: "S/L শাটার লক মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
+          ]),
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(child: _buildTextInput(controller: _ilController, label: "I/L ইন্টারলক মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
+            const SizedBox(width: 8),
+            Expanded(child: _buildTextInput(controller: _stController, label: "S/T শাটার টপ মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
+          ]),
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(child: _buildTextInput(controller: _sbController, label: "S/B শাটার বটম মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
+            const SizedBox(width: 8),
+            if (_selectedThaiColorSet?.profileSize.contains('4') == true)
+              Expanded(child: _buildTextInput(controller: _nsController, label: "N/S নেট সেকশন মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {})))
+            else
+              const Expanded(child: SizedBox()),
+          ]),
+          if (_selectedThaiColorSet?.profileSize.contains('4') == true) ...[
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(child: _buildTextInput(controller: _nhController, label: "N/H নেট হ্যান্ডেল মোট ইঞ্চি", isNumber: true, onChanged: (v) => setState(() {}))),
+              const SizedBox(width: 8),
+              const Expanded(child: SizedBox()),
+            ]),
+          ],
+        ])),
+        const SizedBox(height: 14),
+        _buildCard(
+          borderColor: cAccent.withOpacity(0.3),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            _buildHeading("📊 বার ব্রেকডাউন"),
+            const SizedBox(height: 12),
+            _buildAluBreakdownTable(),
+            const SizedBox(height: 16),
+            GestureDetector(
+              onTap: () => _showStep1DiscountDialog(),
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: _brandDiscount > 0
+                      ? cYellow.withOpacity(0.08)
+                      : cBorder.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: _brandDiscount > 0
+                        ? cYellow.withOpacity(0.3)
+                        : cBorder,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.local_offer_rounded,
+                            color: _brandDiscount > 0 ? cYellow : cMuted, size: 16),
+                        const SizedBox(width: 6),
+                        Text(
+                          _brandDiscount > 0
+                              ? "ডিসকাউন্ট (-${_brandDiscount.toStringAsFixed(0)}%)"
+                              : "ডিসকাউন্ট (0%)",
+                          style: GoogleFonts.hindSiliguri(
+                            color: _brandDiscount > 0 ? cYellow : cMuted,
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const Spacer(),
+                        Icon(Icons.edit_rounded,
+                            color: _brandDiscount > 0 ? cYellow : cMuted, size: 14),
+                      ],
+                    ),
+                    if (_brandDiscount > 0) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        "মূল দাম: ৳ ${_fmtTk(_getCalculation().calcAluTotal().toDouble())}",
+                        style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 12, decoration: TextDecoration.lineThrough)),
+                      const SizedBox(height: 2),
+                      Text(
+                        "ছাড়: -৳ ${_fmtTk((_getCalculation().calcAluTotal() - _calcWindowAluTotalDiscounted()).toDouble())}",
+                        style: GoogleFonts.hindSiliguri(color: cGreen, fontSize: 12)),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            Text(
+              "অ্যালুমিনিয়াম সাবটোটাল: ৳ ${_fmtTk(_calcAluTotal().toDouble())}",
+              style: GoogleFonts.hindSiliguri(color: cGreen, fontWeight: FontWeight.bold, fontSize: 15)),
+          ]),
+        ),
+      ],
+    ]);
+  }
+  Widget _buildDoorBreakdownTable() {
+    final doorSet = _getDoorColorSet();
+    if (doorSet == null) {
+      return Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Text("এই ব্র্যান্ড/কালারে সিঙ্গেল ডোরের রেট পাওয়া যায়নি",
+            style: GoogleFonts.hindSiliguri(color: cRed, fontSize: 12)),
+      );
+    }
+    final cuts = _getCalculation().calcDoorCutInches();
+    final specInches = WindowCalculation.calcSpecLengthInches(doorSet.specLength);
+
+    final rows = [
+      {"name": "O/S আউটার সাইড", "inch": cuts['os']!, "price": doorSet.priceOs},
+      {"name": "O/T আউটার টপ", "inch": cuts['ot']!, "price": doorSet.priceOt},
+      {"name": "Low Bottom", "inch": cuts['ohb']!, "price": doorSet.priceOhb},
+      {"name": "Shutter Lock", "inch": cuts['sl']!, "price": doorSet.priceSl},
+      {"name": "Shutter Top", "inch": cuts['st']!, "price": doorSet.priceSt},
+      {"name": "Shutter Bottom", "inch": cuts['sb']!, "price": doorSet.priceSb},
+      {"name": "1.75 Box", "inch": cuts['box']!, "price": doorSet.priceBox175 ?? 0},
+      {"name": "Fitting Angle", "inch": cuts['fittingAngle']!, "price": doorSet.priceFittingAngle ?? 0},
+    ];
+
+    return Column(children: [
+      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        Expanded(flex: 3, child: Text("সেকশন", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11))),
+        SizedBox(width: 42, child: Text("ইঞ্চি", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.right)),
+        SizedBox(width: 40, child: Text("বার", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.center)),
+        SizedBox(width: 55, child: Text("দর/বার", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.right)),
+        SizedBox(width: 65, child: Text("দাম (Tk)", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11), textAlign: TextAlign.right)),
+      ]),
+      const SizedBox(height: 6),
+      const Divider(color: cBorder, height: 1),
+      const SizedBox(height: 8),
+      for (var row in rows)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(children: [
+            Expanded(flex: 3, child: Text(row['name'] as String,
+                style: GoogleFonts.hindSiliguri(color: cText, fontSize: 13))),
+            SizedBox(width: 42,
+                child: Text("${(row['inch'] as double).toStringAsFixed(0)}\"",
+                    style: GoogleFonts.inter(color: cMuted, fontSize: 12),
+                    textAlign: TextAlign.right)),
+            Container(width: 40, alignment: Alignment.center,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  decoration: BoxDecoration(color: cAccent2, borderRadius: BorderRadius.circular(4)),
+                  child: Text(_formatBar(WindowCalculation.inchToBars(row['inch'] as double, specLengthInches: specInches)),
+                      style: GoogleFonts.inter(color: cBg, fontSize: 10, fontWeight: FontWeight.bold)),
+                )),
+            SizedBox(width: 55,
+                child: _doorBrandDiscount > 0
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text("${row['price']}",
+                              style: GoogleFonts.inter(color: cMuted, fontSize: 12)),
+                          Text("${((row['price'] as int) * (1 - _doorBrandDiscount / 100)).round()}",
+                              style: GoogleFonts.inter(color: cGreen, fontSize: 13, fontWeight: FontWeight.bold)),
+                        ],
+                      )
+                    : Text("${row['price']}",
+                        style: GoogleFonts.inter(color: cMuted, fontSize: 12),
+                        textAlign: TextAlign.right)),
+            SizedBox(width: 65,
+                child: Text("${(WindowCalculation.inchToBars(row['inch'] as double, specLengthInches: specInches) * (row['price'] as int) * (1 - _doorBrandDiscount / 100)).round()}",
+                    style: GoogleFonts.inter(color: cGreen, fontSize: 13, fontWeight: FontWeight.bold),
+                    textAlign: TextAlign.right)),
+          ]),
+        ),
     ]);
   }
 
@@ -1617,7 +2407,9 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
 
   Widget _buildStep3() {
     final calc = _getCalculation();
+    final hasWindows = _windowsList.any((w) => (w['type'] ?? 'window') != 'door');
     final hwItems = calc.calcHardwareBreakdown();
+    final doorHwItems = calc.calcDoorHardwareBreakdown();
     final is4Inch = _selectedThaiColorSet?.profileSize.contains('4') == true;
 
     // Apply custom rates
@@ -1637,25 +2429,39 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       // ── ৩'' Hardware ──
-      _buildCard(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        _buildHeading("🛠️ ৩'' হার্ডওয়্যার"),
-        const SizedBox(height: 12),
-        _buildHwTableHeader(),
-        const Divider(color: cBorder, height: 1),
-        for (var item in fixed3) _buildHwRow(item),
-        for (var item in scalable3) _buildHwRow(item),
-      ])),
-
-      // ── ৪'' Extra Hardware ──
-      if (is4Inch) ...[
-        const SizedBox(height: 14),
+      if (hasWindows) ...[
         _buildCard(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          _buildHeading("🕸️ ৪'' এক্সট্রা (নেট সহ)"),
+          _buildHeading("🛠️ ৩'' হার্ডওয়্যার"),
           const SizedBox(height: 12),
           _buildHwTableHeader(),
           const Divider(color: cBorder, height: 1),
-          for (var item in fixed4) _buildHwRow(item),
-          for (var item in scalable4) _buildHwRow(item),
+          for (var item in fixed3) _buildHwRow(item),
+          for (var item in scalable3) _buildHwRow(item),
+        ])),
+
+        // ── ৪'' Extra Hardware ──
+        if (is4Inch) ...[
+          const SizedBox(height: 14),
+          _buildCard(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            _buildHeading("🕸️ ৪'' এক্সট্রা (নেট সহ)"),
+            const SizedBox(height: 12),
+            _buildHwTableHeader(),
+            const Divider(color: cBorder, height: 1),
+            for (var item in fixed4) _buildHwRow(item),
+            for (var item in scalable4) _buildHwRow(item),
+          ])),
+        ],
+      ],
+
+      // ── সিঙ্গেল ডোর হার্ডওয়্যার ──
+      if (doorHwItems.isNotEmpty) ...[
+        const SizedBox(height: 14),
+        _buildCard(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          _buildHeading("🚪 সিঙ্গেল ডোর হার্ডওয়্যার"),
+          const SizedBox(height: 12),
+          _buildHwTableHeader(),
+          const Divider(color: cBorder, height: 1),
+          for (var item in doorHwItems) _buildHwRow(item),
         ])),
       ],
 
@@ -1693,7 +2499,6 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     final rate = customRate ?? defaultRate;
     final qty = item['qty'];
     final cost = (qty is int ? qty : (qty as num).toInt()) * rate;
-    final isEditable = name.contains('লক') || name.contains('হুইল') || name.contains('গাম');
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(children: [
@@ -1708,15 +2513,15 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
             decoration: BoxDecoration(
-              color: customRate != null ? cAccent2.withOpacity(0.15) : (isEditable ? cBg : Colors.transparent),
+              color: customRate != null ? cAccent2.withOpacity(0.15) : cBg,
               borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: customRate != null ? cAccent2.withOpacity(0.5) : (isEditable ? cBorder : Colors.transparent)),
+              border: Border.all(color: customRate != null ? cAccent2.withOpacity(0.5) : cBorder),
             ),
-            child: Text("৳${_fmtTk(rate)}${isEditable ? ' ✏' : ''}",
+            child: Text("৳${_fmtRate(rate)} ✏",
                 style: GoogleFonts.inter(
-                  color: customRate != null ? cAccent2 : (isEditable ? cAccent : cMuted),
+                  color: customRate != null ? cAccent2 : cAccent,
                   fontSize: 11,
-                  fontWeight: isEditable ? FontWeight.w600 : FontWeight.normal,
+                  fontWeight: FontWeight.w600,
                 ), textAlign: TextAlign.right),
           ),
         )),
@@ -1805,6 +2610,8 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
 
   Widget _buildStep4() {
     final calc = _getCalculation();
+    final hasWindows = _windowsList.any((w) => (w['type'] ?? 'window') != 'door');
+    final hasDoors = _windowsList.any((w) => w['type'] == 'door');
     double totalSft = calc.calcTotalSft();
     int aluTotal = calc.calcAluTotal();
     int aluTotalAfterDiscount = _calcAluTotal();
@@ -1887,45 +2694,117 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           _buildHeading("🧾 ফাইনাল ইনভয়েস"),
           const SizedBox(height: 10),
-          Row(children: [
-            Expanded(child: _buildCompactDropdown(
-              label: "ব্র্যান্ড",
-              value: _selectedBrandName,
-              items: (() {
-                final allB = _thaiColorSets.map((e) => e.brand).toSet().toList();
-                return _selectedBrands.isEmpty
-                    ? allB
-                    : allB.where((b) => _selectedBrands.contains(b)).toList();
-              })(),
-              onChanged: (v) => setState(() {
-                _selectedBrandName = v;
-                _updateColorsForBrand();
-              }),
-            )),
-            const SizedBox(width: 6),
-            Expanded(child: _buildCompactDropdown(
-              label: "কালার",
-              value: _selectedColorName,
-              items: _thaiColorSets
-                  .where((e) => e.brand == _selectedBrandName)
-                  .map((e) => e.color)
+          Builder(builder: (_) {
+            final hasWindowsHere = _windowsList.any((w) => (w['type'] ?? 'window') != 'door');
+            final hasDoorsHere = _windowsList.any((w) => w['type'] == 'door');
+
+            final brandItems = (() {
+              final allB = _thaiColorSets
+                  .where((e) => e.model == _selectedModel && e.profileSize != 'single_door')
+                  .map((e) => e.brand)
                   .toSet()
-                  .toList(),
-              onChanged: (v) => setState(() {
-                _selectedColorName = v;
-                _updateProfileSizesForColor();
-              }),
-            )),
-            const SizedBox(width: 6),
-            Expanded(child: _buildCompactProfileSizeDropdown()),
-          ]),
+                  .toList();
+              return _selectedBrands.isEmpty
+                  ? allB
+                  : allB.where((b) => _selectedBrands.contains(b)).toList();
+            })();
+
+            final colorItems = _thaiColorSets
+                .where((e) =>
+                    e.model == _selectedModel &&
+                    e.brand == _selectedBrandName &&
+                    e.profileSize != 'single_door')
+                .map((e) => e.color)
+                .toSet()
+                .toList();
+
+            final doorBrandItems = _thaiColorSets
+                .where((e) => e.model == _selectedModel && e.profileSize == 'single_door')
+                .map((e) => e.brand)
+                .toSet()
+                .toList();
+            final doorColorItems = _thaiColorSets
+                .where((e) =>
+                    e.model == _selectedModel &&
+                    e.brand == _selectedDoorBrandName &&
+                    e.profileSize == 'single_door')
+                .map((e) => e.color)
+                .toSet()
+                .toList();
+
+            return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              if (hasWindowsHere) ...[
+                Text("🪟 জানালার প্রোফাইল", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11)),
+                const SizedBox(height: 4),
+                Row(children: [
+                  Expanded(child: _buildCompactDropdown(
+                    label: "ব্র্যান্ড",
+                    value: brandItems.contains(_selectedBrandName) ? _selectedBrandName : null,
+                    items: brandItems,
+                    onChanged: (v) => setState(() {
+                      _selectedBrandName = v;
+                      _updateColorsForBrand();
+                    }),
+                  )),
+                  const SizedBox(width: 6),
+                  Expanded(child: _buildCompactDropdown(
+                    label: "কালার",
+                    value: colorItems.contains(_selectedColorName) ? _selectedColorName : null,
+                    items: colorItems,
+                    onChanged: (v) => setState(() {
+                      _selectedColorName = v;
+                      _updateProfileSizesForColor();
+                    }),
+                  )),
+                  const SizedBox(width: 6),
+                  Expanded(child: _buildCompactProfileSizeDropdown()),
+                ]),
+              ],
+              if (hasWindowsHere && hasDoorsHere) const SizedBox(height: 10),
+              if (hasDoorsHere) ...[
+                Text("🚪 সিঙ্গেল ডোর প্রোফাইল", style: GoogleFonts.hindSiliguri(color: cMuted, fontSize: 11)),
+                const SizedBox(height: 4),
+                Row(children: [
+                  Expanded(child: _buildCompactDropdown(
+                    label: "ব্র্যান্ড",
+                    value: doorBrandItems.contains(_selectedDoorBrandName) ? _selectedDoorBrandName : null,
+                    items: doorBrandItems,
+                    onChanged: (v) => setState(() {
+                      _selectedDoorBrandName = v;
+                      final dc = _thaiColorSets
+                          .where((e) => e.model == _selectedModel && e.brand == v && e.profileSize == 'single_door')
+                          .map((e) => e.color)
+                          .toSet()
+                          .toList();
+                      _selectedDoorColorName = dc.isNotEmpty ? dc.first : null;
+                    }),
+                  )),
+                  const SizedBox(width: 6),
+                  Expanded(child: _buildCompactDropdown(
+                    label: "কালার",
+                    value: doorColorItems.contains(_selectedDoorColorName) ? _selectedDoorColorName : null,
+                    items: doorColorItems,
+                    onChanged: (v) => setState(() => _selectedDoorColorName = v),
+                  )),
+                ]),
+              ],
+            ]);
+          }),
           const SizedBox(height: 14),
-          if (_brandDiscount > 0) ...[
-            _buildInvoiceRow("🔩 অ্যালুমিনিয়াম (মূল)", aluTotal.toDouble(), color: cMuted),
-            _buildInvoiceRow("  (-${_brandDiscount.toStringAsFixed(0)}% ডিসকাউন্ট)", -(aluTotal.toDouble() - aluTotalAfterDiscount.toDouble()), color: cYellow),
+          if (hasWindows && _brandDiscount > 0) ...[
+            _buildInvoiceRow("🪟 জানালা অ্যালু (মূল)", calc.calcAluTotal().toDouble(), color: cMuted),
+            _buildInvoiceRow("  (-${_brandDiscount.toStringAsFixed(0)}% ডিসকাউন্ট)", -(calc.calcAluTotal().toDouble() - _calcWindowAluTotalDiscounted().toDouble()), color: cYellow),
+          ],
+          if (hasDoors && _doorBrandDiscount > 0) ...[
+            _buildInvoiceRow("🚪 ডোর অ্যালু (মূল)", calc.calcDoorAluTotal().toDouble(), color: cMuted),
+            _buildInvoiceRow("  (-${_doorBrandDiscount.toStringAsFixed(0)}% ডিসকাউন্ট)", -(calc.calcDoorAluTotal().toDouble() - _calcDoorAluTotalDiscounted().toDouble()), color: cYellow),
           ],
           _buildInvoiceRow("🔩 অ্যালুমিনিয়াম বার", aluTotalAfterDiscount.toDouble()),
-          _buildInvoiceRow("🪟 গ্লাস (${totalSft.toStringAsFixed(1)} Sft)", glassTotal),
+          if (hasWindows && hasDoors && calc.hasSeparateDoorGlass) ...[
+            _buildInvoiceRow("🪟 জানালার গ্লাস (${calc.calcWindowSft().toStringAsFixed(1)} Sft)", calc.calcWindowGlassTotal()),
+            _buildInvoiceRow("🚪 ডোরের গ্লাস (${calc.calcDoorSft().toStringAsFixed(1)} Sft)", calc.calcDoorGlassTotal()),
+          ] else
+            _buildInvoiceRow("🪟 গ্লাস (${totalSft.toStringAsFixed(1)} Sft)", glassTotal),
           _buildInvoiceRow("🔧 হার্ডওয়্যার", hwTotal),
           _buildInvoiceRow("👷 লেবার / ফিটিং", labor),
           if (fare > 0) _buildInvoiceRow("🚗 গাড়ি ভাড়া", fare),
@@ -2012,12 +2891,16 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
 
   Widget _buildCompactProfileSizeDropdown() {
     final profileSizeList = _thaiColorSets
-        .where((e) => e.brand == _selectedBrandName && e.color == _selectedColorName)
+        .where((e) =>
+            e.model == _selectedModel &&
+            e.brand == _selectedBrandName &&
+            e.color == _selectedColorName &&
+            e.profileSize != 'single_door')
         .map((e) => e.profileSize)
         .toSet()
         .toList();
     return DropdownButtonFormField<String>(
-      value: _selectedProfileSize,
+      value: profileSizeList.contains(_selectedProfileSize) ? _selectedProfileSize : null,
       isExpanded: true,
       dropdownColor: cCard,
       style: GoogleFonts.hindSiliguri(color: cText, fontSize: 11),
@@ -2170,4 +3053,18 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
         (m) => '${m[1]},',
       );
+
+  // রেট যদি পূর্ণসংখ্যা না হয়, দশমিক সহ দেখানো হয় যাতে দর × পরিমাণ = মোট ঠিকঠাক মিলে
+  String _fmtRate(double rate) {
+    if (rate == rate.roundToDouble()) {
+      // পূর্ণসংখ্যা রেট — যেমন ২, ১২৫
+      return _fmtTk(rate);
+    }
+    // দশমিক রেট — trailing zero বাদ দিয়ে যত ডিজিট দরকার তত দেখাবে (সর্বোচ্চ ২ ঘর)
+    String s = rate.toStringAsFixed(2);
+    if (s.endsWith('0')) {
+      s = s.substring(0, s.length - 1);
+    }
+    return s;
+  }
 }

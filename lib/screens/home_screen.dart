@@ -6,8 +6,10 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/database_service.dart';
+import '../services/session_tracker_service.dart';
 import 'invoice_detail_screen.dart';
 import 'price_list_screen.dart';
+import 'settings_screen.dart';
 import 'update_dialog.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -35,6 +37,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    SessionTrackerService.instance.startSession();
     WidgetsBinding.instance.addObserver(this);
     _loadInvoices();
     _periodicUpdateCheck();
@@ -665,6 +668,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           },
         ),
         ListTile(
+          leading: const Icon(Icons.settings_rounded, color: cMuted),
+          title: Text("সেটিংস", style: GoogleFonts.hindSiliguri(color: cText)),
+          onTap: () {
+            Navigator.pop(context);
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen()));
+          },
+        ),
+        ListTile(
           leading: const Icon(Icons.info_outline_rounded, color: cMuted),
           title: Text("অ্যাপ সম্পর্কে", style: GoogleFonts.hindSiliguri(color: cText)),
           onTap: () {
@@ -683,14 +694,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           onTap: () async {
             await DatabaseService.instance.logout();
             if (context.mounted) Navigator.pushReplacementNamed(context, '/');
-          },
-        ),
-        ListTile(
-          leading: const Icon(Icons.delete_forever_rounded, color: Color(0xFFEF4444)),
-          title: Text("অ্যাকাউন্ট ডিলিট করুন", style: GoogleFonts.hindSiliguri(color: const Color(0xFFEF4444), fontWeight: FontWeight.bold)),
-          onTap: () {
-            Navigator.pop(context); // close drawer first
-            _showDeleteAccountDialog();
           },
         ),
         ListTile(
